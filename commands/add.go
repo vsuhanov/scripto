@@ -1,4 +1,4 @@
-package main
+package commands
 
 import (
 	"fmt"
@@ -38,7 +38,7 @@ var addCmd = &cobra.Command{
 		command := strings.Join(args, " ")
 
 		// Parse placeholders from command
-		placeholders := parsePlaceholders(command)
+		placeholders := ParsePlaceholders(command)
 
 		// Get script name from flag (optional)
 		scriptName := cmd.Flag("name").Value.String()
@@ -79,9 +79,9 @@ var addCmd = &cobra.Command{
 	},
 }
 
-// parsePlaceholders extracts placeholders in the format {variable:description} from a command
-func parsePlaceholders(command string) []string {
-	re := regexp.MustCompile(`\{([^:}]+):[^}]*\}`)
+// ParsePlaceholders extracts placeholders in the format %variable:description% from a command
+func ParsePlaceholders(command string) []string {
+	re := regexp.MustCompile(`%([^:%]+):[^%]*%`)
 	matches := re.FindAllStringSubmatch(command, -1)
 
 	placeholders := make([]string, 0, len(matches))
