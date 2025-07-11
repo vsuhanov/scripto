@@ -1,10 +1,15 @@
 package commands
 
 import (
+	_ "embed"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 )
+
+//go:embed scripts/completion.zsh
+var customZshCompletion string
 
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish|powershell]",
@@ -60,7 +65,9 @@ PowerShell:
 		case "bash":
 			cmd.Root().GenBashCompletion(os.Stdout)
 		case "zsh":
-			cmd.Root().GenZshCompletion(os.Stdout)
+			fmt.Print(customZshCompletion)
+		// case "zsh":
+		// 	cmd.Root().GenZshCompletion(os.Stdout)
 		case "fish":
 			cmd.Root().GenFishCompletion(os.Stdout, true)
 		case "powershell":

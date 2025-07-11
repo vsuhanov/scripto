@@ -135,6 +135,11 @@ func (p *PlaceholderPrompter) PromptToSaveCommand(command string) (bool, string,
 	return true, name, description, nil
 }
 
+// PromptForScope prompts the user to choose between global or local scope
+func (p *PlaceholderPrompter) PromptForScope() (bool, error) {
+	return p.prompter.PromptYesNo("Save globally? (y=global, n=local directory)")
+}
+
 // ConfirmExecution asks the user to confirm command execution
 func (p *PlaceholderPrompter) ConfirmExecution(command string) (bool, error) {
 	fmt.Printf("Execute command: %s\n", command)

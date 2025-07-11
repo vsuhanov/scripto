@@ -37,43 +37,25 @@ var addCmd = &cobra.Command{
 
 		command := strings.Join(args, " ")
 
-		// Parse placeholders from command
-		placeholders := ParsePlaceholders(command)
-
 		// Get script name from flag (optional)
 		scriptName := cmd.Flag("name").Value.String()
 
 		// Get description from flag
 		description := cmd.Flag("description").Value.String()
 
-		script := storage.Script{
-			Name:         scriptName,
-			Command:      command,
-			Placeholders: placeholders,
-			Description:  description,
-		}
+		// Get global flag
+		isGlobal := cmd.Flag("global").Changed
 
-		key := "global"
-		if !cmd.Flag("global").Changed {
-			wd, err := os.Getwd()
-			if err != nil {
-				fmt.Println(err)
-				os.Exit(1)
-			}
-			key = wd
-		}
-
-		config[key] = append(config[key], script)
-
-		if err := storage.WriteConfig(configPath, config); err != nil {
-			fmt.Println(err)
+		// Use the shared function to store the script
+		if err := StoreScript(config, configPath, scriptName, command, description, isGlobal); err != nil {
+			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
 
-		if script.Name != "" {
-			fmt.Printf("Added script '%s'\n", script.Name)
+		if scriptName != "" {
+			fmt.Printf("Added script '%s'\n", scriptName)
 		} else {
-			fmt.Printf("Added script: %s\n", script.Command)
+			fmt.Printf("Added script: %s\n", command)
 		}
 
 	},
@@ -92,6 +74,48 @@ func ParsePlaceholders(command string) []string {
 	}
 
 	return placeholders
+}
+
+// StoreScript stores a script with the given parameters, checking for duplicates
+func StoreScript(config storage.Config, configPath string, name, command, description string, isGlobal bool) error {
+	// Parse placeholders from command
+	placeholders := ParsePlaceholders(command)
+
+	script := storage.Script{
+		Name:         name,
+		Command:      command,
+		Placeholders: placeholders,
+		Description:  description,
+	}
+
+	// Determine scope
+	key := "global"
+	if !isGlobal {
+		wd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get working directory: %w", err)
+		}
+		key = wd
+	}
+
+	// Check if script with same name already exists in this scope
+	if name != "" {
+		for _, existingScript := range config[key] {
+			if existingScript.Name == name {
+				return fmt.Errorf("script with name '%s' already exists in this scope", name)
+			}
+		}
+	}
+
+	// Add script to config
+	config[key] = append(config[key], script)
+
+	// Save configuration
+	if err := storage.WriteConfig(configPath, config); err != nil {
+		return fmt.Errorf("failed to save script: %w", err)
+	}
+
+	return nil
 }
 
 func init() {

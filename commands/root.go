@@ -163,36 +163,33 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 		return fmt.Errorf("command not found: %s", input)
 	}
 
-	// Save the command using existing add logic
-	script := storage.Script{
-		Name:        name,
-		Command:     input,
-		Description: description,
+	// Prompt for scope (global or local)
+	global, err := prompter.PromptForScope()
+	if err != nil {
+		return fmt.Errorf("failed to prompt for scope: %w", err)
 	}
 
-	// Parse placeholders
-	placeholders := ParsePlaceholders(input)
-	script.Placeholders = placeholders
-
-	// Determine scope (use current directory by default)
-	key := "global"
-	wd, err := os.Getwd()
-	if err == nil {
-		key = wd
-	}
-
-	config[key] = append(config[key], script)
-
-	// Save configuration
-	if err := storage.WriteConfig(configPath, config); err != nil {
-		return fmt.Errorf("failed to save script: %w", err)
+	// Use the shared function to store the script
+	if err := StoreScript(config, configPath, name, input, description, global); err != nil {
+		return err
 	}
 
 	fmt.Printf("Saved script: %s\n", input)
 
+	// Parse placeholders for execution
+	placeholders := ParsePlaceholders(input)
+
 	// Now execute the saved script
 	if len(placeholders) > 0 {
-		processor := args.NewArgumentProcessor(script)
+		// Create a script object for processing
+		savedScript := storage.Script{
+			Name:         name,
+			Command:      input,
+			Placeholders: placeholders,
+			Description:  description,
+		}
+
+		processor := args.NewArgumentProcessor(savedScript)
 		result, err := processor.ProcessArguments([]string{})
 		if err != nil {
 			return err
@@ -251,8 +248,33 @@ func executeCommand(command string) error {
 	return cmd.Run()
 }
 
+// convertScriptResultsToSuggestions converts script matcher results to completion suggestions
+func convertScriptResultsToSuggestions(results []script.MatchResult, separator string) []string {
+	var suggestions []string
+	for _, result := range results {
+		if result.Script.Name != "" {
+			// Named script - use scope as group name
+			description := result.Script.Description
+			if description == "" {
+				description = result.Script.Command
+			}
+			suggestions = append(suggestions, result.Directory+separator+result.Script.Name+separator+description)
+		} else {
+			// Unnamed script - show command, use scope as group name
+			command := result.Script.Command
+			if len(command) > 50 {
+				command = command[:47] + "..."
+			}
+			suggestions = append(suggestions, result.Directory+separator+command+separator+result.Script.Command)
+		}
+	}
+	return suggestions
+}
+
 // getCompletionSuggestions provides completion suggestions for zsh
 func getCompletionSuggestions(cmdArgs []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	separator := "\x1F"
+
 	// Load configuration
 	configPath, err := storage.GetConfigPath()
 	if err != nil {
@@ -273,21 +295,7 @@ func getCompletionSuggestions(cmdArgs []string, toComplete string) ([]string, co
 			return nil, cobra.ShellCompDirectiveError
 		}
 
-		var suggestions []string
-		for _, result := range allScripts {
-			if result.Script.Name != "" {
-				// Named script
-				suggestions = append(suggestions, result.Script.Name+"\t"+result.Script.Description)
-			} else {
-				// Unnamed script - show command
-				command := result.Script.Command
-				// if len(command) > 50 {
-				// 	command = command[:47] + "..."
-				// }
-				suggestions = append(suggestions, command+"\t"+result.Scope)
-			}
-		}
-
+		suggestions := convertScriptResultsToSuggestions(allScripts, separator)
 		return suggestions, cobra.ShellCompDirectiveNoFileComp
 	}
 
@@ -308,19 +316,7 @@ func getCompletionSuggestions(cmdArgs []string, toComplete string) ([]string, co
 			return nil, cobra.ShellCompDirectiveError
 		}
 
-		var suggestions []string
-		for _, result := range filtered {
-			if result.Script.Name != "" {
-				suggestions = append(suggestions, result.Script.Name+"\t"+result.Script.Description)
-			} else {
-				command := result.Script.Command
-				if len(command) > 50 {
-					command = command[:47] + "..."
-				}
-				suggestions = append(suggestions, command+"\t"+result.Scope)
-			}
-		}
-
+		suggestions := convertScriptResultsToSuggestions(filtered, separator)
 		return suggestions, cobra.ShellCompDirectiveNoFileComp
 	}
 
@@ -396,5 +392,5 @@ func handleCompletion(args []string) {
 	}
 
 	// End with the completion directive
-	fmt.Println(":4") // ShellCompDirectiveNoFileComp
+	fmt.Println(":36") // ShellCompDirectiveNoFileComp | ShellCompDirectiveKeepOrder
 }
