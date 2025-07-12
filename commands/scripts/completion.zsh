@@ -200,34 +200,73 @@ _scripto()
 #  compadd -X "File Operations:" -d file_descriptions -a file_commands
 #  compadd -X "Network Tools:" -d network_descriptions -a network_commands
 #  return 0
-   local toComplete="${words[@]:1}"
-   __scripto_debug $toComplete
+#   local toComplete="${words[@]:1}"
+#   __scripto_debug $toComplete
+#
+#   local -a completions=(
+#     "echo foobar:Run echo foobar"
+#     "echo barbaz:description barbaz"
+#     "ecto barbaz:description barbaz"
+#     "ls -la:List files"
+#   )
+#
+#   for comp in "${completions[@]}"; do
+#     local full="${comp%%:*}"
+#     local descr=${comp#*:}
+#
+#     # Check if user's input matches somewhere inside the full command (not necessarily prefix)
+#     if [[ "$full" == *"$toComplete"* ]]; then
+#       # Calculate what's missing
+#       local insertion="${full#$toComplete}"
+#
+#       # If insertion is empty (exact match), insert full thing
+#       [[ -z "$insertion" ]] && insertion="$full"
+#
+#       __scripto_debug "insertion: $insertion"
+#       local -a displayArray=("$full")
+#       compadd -U -Q -d displayArray -V "$insertion" -P "$words[CURRENT]" -- "$insertion"
+#     fi
+#   done
+#   return 0
+# -------------------------------------------------------------
+    #   local toComplete="${words[@]:1}"
+#   __scripto_debug $toComplete
+#
+#   local -a completions=(
+#     "echo foobar"
+#     "echo barbazbaz"
+#     "ecto barbazbaz"
+#     "ls -la:List"
+#   )
+#
+#     local -a displays=(
+#     "bar1"
+#     "bar2"
+#     "bar3"
+#     "bar4"
+#     )
+#
+#       compadd -d displays  -a completions
+#   for comp in "${completions[@]}"; do
+#     local full="${comp%%:*}"
+#     local descr=${comp#*:}
+#
+#     # Check if user's input matches somewhere inside the full command (not necessarily prefix)
+#     if [[ "$full" == *"$toComplete"* ]]; then
+#       # Calculate what's missing
+#       local insertion="${full#$toComplete}"
+#
+#       # If insertion is empty (exact match), insert full thing
+#       [[ -z "$insertion" ]] && insertion="$full"
+#
+#       __scripto_debug "insertion: $insertion"
+#       local -a displayArray=("$full")
+#       compadd -U -Q -d displayArray -V "$insertion" -P "$words[CURRENT]" -- "$insertion"
+#     fi
+#   done
+#    return 0
+# -------------------------------------------------------------
 
-   local -a completions=(
-     "echo foobar:Run echo foobar"
-     "echo barbaz:description barbaz"
-     "ecto barbaz:description barbaz"
-     "ls -la:List files"
-   )
-
-   for comp in "${completions[@]}"; do
-     local full="${comp%%:*}"
-     local descr=${comp#*:}
-
-     # Check if user's input matches somewhere inside the full command (not necessarily prefix)
-     if [[ "$full" == *"$toComplete"* ]]; then
-       # Calculate what's missing
-       local insertion="${full#$toComplete}"
-
-       # If insertion is empty (exact match), insert full thing
-       [[ -z "$insertion" ]] && insertion="$full"
-
-       __scripto_debug "insertion: $insertion"
-       local -a displayArray=("$full")
-       compadd -U -Q -d displayArray -V "$insertion" -P "$words[CURRENT]" -- "$insertion"
-     fi
-   done
-    return 0
     local shellCompDirectiveError=1
     local shellCompDirectiveNoSpace=2
     local shellCompDirectiveNoFileComp=4
@@ -257,10 +296,12 @@ _scripto()
     __scripto_debug "lastParam: ${lastParam}, lastChar: ${lastChar}"
     
     # Set toComplete for prefix stripping logic
-    local toComplete=""
-    if [ "${lastChar}" != "" ]; then
-        toComplete="$lastParam"
-    fi
+    local toComplete="${words[@]:1}"
+#
+#    local toComplete=""
+#    if [ "${lastChar}" != "" ]; then
+#        toComplete="$lastParam"
+#    fi
     __scripto_debug "toComplete: ${toComplete}"
 
     # For zsh, when completing a flag with an = (e.g., scripto -n=<TAB>)
@@ -363,36 +404,40 @@ _scripto()
                 completion=${completion//:/\\:}
                 description=${description//:/\\:}
 
-                # Combine completion and description with : separator for zsh
-                local completionWithDesc="${completion}:${description}"
+                if [[ "$completion" == *"$toComplete"* ]]; then
+                  # Calculate what's missing
+                  local insertion="${completion#$toComplete}"
 
-                __scripto_debug "Parsed group: ${groupName}, completion: ${completion}, description: ${description}"
+                  # If insertion is empty (exact match), insert full thing
+                  [[ -z "$insertion" ]] && insertion="$completion"
 
-                # Add to grouped completions using a unique separator
-                if [[ -z "${groupedCompletions[$groupName]}" ]]; then
-                    groupedCompletions[$groupName]="$completionWithDesc"
-                    groupNames+=("$groupName")
-                else
-                    groupedCompletions[$groupName]="${groupedCompletions[$groupName]}${separator}$completionWithDesc"
+                  __scripto_debug "insertion: $insertion"
+#                  local -a displayArray=("$full")
+                  local -a display=("$completion -- $description")
+                  local -a insertionA=("$insertion")
+#                  compadd -x "--- $groupName ---"
+                  compadd -U -Q -d display -a insertionA -P "$words[CURRENT]"
+#                  compadd -U -Q -d display -a insertionA -V "$groupName" -x "--- $groupName ---" -P "$words[CURRENT]"
                 fi
-            else
-                # Fallback to old format for backward compatibility
-                comp=${comp//:/\\:}
-                comp=${comp//$tab/:}
-                __scripto_debug "Adding ungrouped completion: ${comp}"
-
-                if [[ -z "${groupedCompletions[default]}" ]]; then
-                    groupedCompletions[default]="$comp"
-                    groupNames+=("default")
-                else
-                    groupedCompletions[default]="${groupedCompletions[default]}${separator}$comp"
-                fi
+#                compadd -U -Q  -V "$insertion" -P "$words[CURRENT]" -- "$insertion"
+#                # Combine completion and description with : separator for zsh
+#                local completionWithDesc="${completion}:${description}"
+#
+#                __scripto_debug "Parsed group: ${groupName}, completion: ${completion}, description: ${description}"
+#
+#                # Add to grouped completions using a unique separator
+#                if [[ -z "${groupedCompletions[$groupName]}" ]]; then
+#                    groupedCompletions[$groupName]="$completionWithDesc"
+#                    groupNames+=("$groupName")
+#                else
+#                    groupedCompletions[$groupName]="${groupedCompletions[$groupName]}${separator}$completionWithDesc"
+#                fi
             fi
 
-            lastComp=$comp
         fi
     done < <(printf "%s\n" "${out[@]}")
 
+    return 0
     # Add a delimiter after the activeHelp statements, but only if:
     # - there are completions following the activeHelp statements, or
     # - file completion will be performed (so there will be choices after the activeHelp)
