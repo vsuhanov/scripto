@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"scripto/internal/args"
@@ -35,7 +34,7 @@ Examples:
 
 		// Execute script matching logic
 		if err := executeScript(args); err != nil {
-			fmt.Printf("Error: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	},
@@ -235,17 +234,11 @@ func convertToArgs(values map[string]string) []string {
 	return arguments
 }
 
-// executeCommand executes the final command using the system shell
+// executeCommand outputs the command for shell function to evaluate
 func executeCommand(command string) error {
-	fmt.Printf("Executing: %s\n", command)
-
-	// Execute using shell
-	cmd := exec.Command("sh", "-c", command)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
-	return cmd.Run()
+	// Output the command for shell function to evaluate
+	fmt.Print(command)
+	return nil
 }
 
 // convertScriptResultsToSuggestions converts script matcher results to completion suggestions
@@ -275,9 +268,9 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 			// Unnamed script - show command, use scope as group name
 			command := result.Script.Command
 			displayCommand := command
-			if len(displayCommand) > 50 {
-				displayCommand = displayCommand[:47] + "..."
-			}
+			// if len(displayCommand) > 50 {
+			// 	displayCommand = displayCommand[:47] + "..."
+			// }
 
 			// Filter and strip prefix if needed
 			if toComplete != "" {
@@ -289,9 +282,9 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 
 				// Update display command too
 				displayCommand = command
-				if len(displayCommand) > 50 {
-					displayCommand = displayCommand[:47] + "..."
-				}
+				// if len(displayCommand) > 50 {
+				// 	displayCommand = displayCommand[:47] + "..."
+				// }
 			}
 
 			suggestions = append(suggestions, result.Directory+separator+displayCommand+separator+result.Script.Command)
@@ -335,10 +328,11 @@ func Execute() {
 	// If no arguments, run root command normally
 	if len(cmdArgs) == 0 {
 		if err := rootCmd.Execute(); err != nil {
-			fmt.Println(err)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		return
+		// Built-in command completed successfully - exit with code 3
+		os.Exit(3)
 	}
 
 	firstArg := cmdArgs[0]
@@ -346,26 +340,28 @@ func Execute() {
 	// Handle completion specially to avoid Cobra's built-in suggestions
 	if firstArg == "__complete" {
 		handleCompletion(cmdArgs[1:])
-		return
+		// Completion completed successfully - exit with code 3
+		os.Exit(3)
 	}
 
 	// Check if the first argument is a known subcommand
-	knownSubcommands := []string{"add", "completion", "help", "--help", "-h"}
+	knownSubcommands := []string{"add", "completion", "install", "help", "--help", "-h"}
 
 	for _, subcmd := range knownSubcommands {
 		if firstArg == subcmd {
 			// This is a known subcommand, delegate to Cobra
 			if err := rootCmd.Execute(); err != nil {
-				fmt.Println(err)
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-			return
+			// Built-in command completed successfully - exit with code 3
+			os.Exit(3)
 		}
 	}
 
 	// Not a known subcommand, treat as script execution
 	if err := executeScript(cmdArgs); err != nil {
-		fmt.Printf("Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }

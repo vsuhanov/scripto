@@ -12,6 +12,194 @@ __scripto_debug()
 
 _scripto()
 {
+#    local context state line
+#
+#    if [[ $#words -eq 2 ]]; then
+#      local -a database_commands file_commands network_commands
+#
+#      database_commands=(
+#        'connect:Connect to database'
+#        'query:Execute SQL query'
+#        'backup:Create database backup'
+#      )
+#
+#      file_commands=(
+#        'copy:Copy files'
+#        'move:Move files'
+#        'delete:Remove files'
+#      )
+#
+#      network_commands=(
+#        'ping:Test network connectivity'
+#        'download:Download files'
+#        'upload:Upload files'
+#      )
+#
+#      # Show groups with proper separation
+#      _describe -t database -V 'Database Commands' database_commands
+#      _describe -t files -V 'File Operations' file_commands
+#      _describe -t network -V 'Network Tools' network_commands
+#    fi
+#    return 0
+#    local context state line
+#
+#    # If no arguments yet, show grouped commands
+#    if [[ $#words -eq 2 ]]; then
+#      local -a all_commands
+#
+#      # Add each group separately with headers
+#      compadd -X "Database Commands:" connect query backup
+#      compadd -X "File Operations:" copy move delete
+#      compadd -X "Network Tools:" ping download upload
+#
+#      # Add descriptions for each command
+#      compadd -Q -d '(
+#        "Connect to database"
+#        "Execute SQL query"
+#        "Create database backup"
+#        "Copy files"
+#        "Move files"
+#        "Remove files"
+#        "Test network connectivity"
+#        "Download files"
+#        "Upload files"
+#      )' connect query backup copy move delete ping download upload
+#    fi
+#    return 0
+#    local context state line
+#
+#    # Define command groups
+#    local -a database_commands database_descriptions
+#    local -a file_commands file_descriptions
+#    local -a network_commands network_descriptions
+#
+#    database_commands=(connect query backup)
+#    database_descriptions=(
+#      'Connect to database'
+#      'Execute SQL query'
+#      'Create database backup'
+#    )
+#
+#    file_commands=(copy move delete)
+#    file_descriptions=(
+#      'Copy files'
+#      'Move files'
+#      'Remove files'
+#    )
+#
+#    network_commands=(ping download upload)
+#    network_descriptions=(
+#      'Test network connectivity'
+#      'Download files'
+#      'Upload files'
+#    )
+#
+#    # Add completions with group headers using compadd directly
+#    compadd -X "Database Commands:" -d database_descriptions -a database_commands
+#    compadd -X "File Operations:" -d file_descriptions -a file_commands
+#    compadd -X "Network Tools:" -d network_descriptions -a network_commands
+#    return 0
+#
+#  local context state line
+#
+#  # Define command groups - use separate arrays for commands and descriptions
+#  local -a database_commands database_descriptions
+#  local -a file_commands file_descriptions
+#  local -a network_commands network_descriptions
+#
+#  database_commands=(connect query backup)
+#  database_descriptions=(
+#    'Connect to database'
+#    'Execute SQL query'
+#    'Create database backup'
+#  )
+#
+#  file_commands=(copy move delete)
+#  file_descriptions=(
+#    'Copy files'
+#    'Move files'
+#    'Remove files'
+#  )
+#
+#  network_commands=(ping download upload)
+#  network_descriptions=(
+#    'Test network connectivity'
+#    'Download files'
+#    'Upload files'
+#  )
+#
+#  # Use _alternative to group and display commands
+#  _alternative \
+#    'database:Database Commands:compadd -d database_descriptions -a database_commands' \
+#    'files:File Operations:compadd -d file_descriptions -a file_commands' \
+#    'network:Network Tools:compadd -d network_descriptions -a network_commands'
+#
+#return  0
+#    local context state line
+#
+#    # Define command groups
+#    local -a database_commands
+#    local -a file_commands
+#    local -a network_commands
+#
+#    database_commands=(
+#      'connect:Connect to database'
+#      'query:Execute SQL query'
+#      'backup:Create database backup'
+#    )
+#
+#    file_commands=(
+#      'copy:Copy files'
+#      'move:Move files'
+#      'delete:Remove files'
+#    )
+#
+#    network_commands=(
+#      'ping:Test network connectivity'
+#      'download:Download files'
+#      'upload:Upload files'
+#    )
+#
+#    # Use _alternative to group and display commands
+#    _alternative \
+#      'database:Database Commands:_describe "database commands" database_commands' \
+#      'files:File Operations:_describe "file operations" file_commands' \
+#      'network:Network Tools:_describe "network tools" network_commands'
+#
+#      return 0
+#  local context state line
+#
+#  # Define command groups with descriptions
+#  local -a database_commands database_descriptions
+#  local -a file_commands file_descriptions
+#  local -a network_commands network_descriptions
+#
+#  database_commands=(connect query backup)
+#  database_descriptions=(
+#    'Connect to database'
+#    'Execute SQL query'
+#    'Create database backup'
+#  )
+#
+#  file_commands=(copy move delete)
+#  file_descriptions=(
+#    'Copy files'
+#    'Move files'
+#    'Remove files'
+#  )
+#
+#  network_commands=(ping download upload)
+#  network_descriptions=(
+#    'Test network connectivity'
+#    'Download files'
+#    'Upload files'
+#  )
+#
+#  # Add completions with group separators
+#  compadd -X "Database Commands:" -d database_descriptions -a database_commands
+#  compadd -X "File Operations:" -d file_descriptions -a file_commands
+#  compadd -X "Network Tools:" -d network_descriptions -a network_commands
+#  return 0
    local toComplete="${words[@]:1}"
    __scripto_debug $toComplete
 
@@ -36,7 +224,7 @@ _scripto()
 
        __scripto_debug "insertion: $insertion"
        local -a displayArray=("$full")
-       compadd -U -Q -d displayArray -V $insertion -x ' --- $insertion ----' -P "$words[CURRENT]" -- "$insertion"
+       compadd -U -Q -d displayArray -V "$insertion" -P "$words[CURRENT]" -- "$insertion"
      fi
    done
     return 0
@@ -84,7 +272,7 @@ _scripto()
     fi
 
     # Prepare the command to obtain completions
-    requestComp="${words[1]} __complete ${words[2,-1]}"
+    requestComp="command ${words[1]} __complete ${words[2,-1]}"
     if [ "${lastChar}" = "" ]; then
         # If the last parameter is complete (there is a space following it)
         # We add an extra empty parameter so we can indicate this to the go completion code.
@@ -295,9 +483,9 @@ _scripto()
 
             if [ ${#groupCompletions[@]} -gt 0 ]; then
                 __scripto_debug "Array size - groupCompletions: ${#groupCompletions[@]}"
-                
+                __scripto_debug "words[current]: $words[CURRENT]"
                 # Call _describe for this group with prefix flag and force menu
-                if eval _describe $keepOrder -V "$groupName" groupCompletions $flagPrefix -Q; then
+                if eval _describe $keepOrder -V "$groupName" groupCompletions $flagPrefix -Q ; then
                     __scripto_debug "_describe found completions for group: $groupName"
                     foundCompletions=1
                 else
