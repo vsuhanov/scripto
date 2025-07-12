@@ -12,6 +12,34 @@ __scripto_debug()
 
 _scripto()
 {
+   local toComplete="${words[@]:1}"
+   __scripto_debug $toComplete
+
+   local -a completions=(
+     "echo foobar:Run echo foobar"
+     "echo barbaz:description barbaz"
+     "ecto barbaz:description barbaz"
+     "ls -la:List files"
+   )
+
+   for comp in "${completions[@]}"; do
+     local full="${comp%%:*}"
+     local descr=${comp#*:}
+
+     # Check if user's input matches somewhere inside the full command (not necessarily prefix)
+     if [[ "$full" == *"$toComplete"* ]]; then
+       # Calculate what's missing
+       local insertion="${full#$toComplete}"
+
+       # If insertion is empty (exact match), insert full thing
+       [[ -z "$insertion" ]] && insertion="$full"
+
+       __scripto_debug "insertion: $insertion"
+       local -a displayArray=("$full")
+       compadd -U -Q -d displayArray -V $insertion -x ' --- $insertion ----' -P "$words[CURRENT]" -- "$insertion"
+     fi
+   done
+    return 0
     local shellCompDirectiveError=1
     local shellCompDirectiveNoSpace=2
     local shellCompDirectiveNoFileComp=4
@@ -20,6 +48,11 @@ _scripto()
     local shellCompDirectiveKeepOrder=32
 
     local lastParam lastChar flagPrefix requestComp out directive comp lastComp noSpace keepOrder
+    
+    # Force menu selection for completions
+    setopt local_options BASH_REMATCH
+    zstyle ':completion:*' menu select
+    zstyle ':completion:*' list-colors ''
 
     __scripto_debug "\n========= starting completion logic =========="
     __scripto_debug "CURRENT: ${CURRENT}, words[*]: ${words[*]}"
@@ -34,6 +67,13 @@ _scripto()
     lastParam=${words[-1]}
     lastChar=${lastParam[-1]}
     __scripto_debug "lastParam: ${lastParam}, lastChar: ${lastChar}"
+    
+    # Set toComplete for prefix stripping logic
+    local toComplete=""
+    if [ "${lastChar}" != "" ]; then
+        toComplete="$lastParam"
+    fi
+    __scripto_debug "toComplete: ${toComplete}"
 
     # For zsh, when completing a flag with an = (e.g., scripto -n=<TAB>)
     # completions must be prefixed with the flag
@@ -223,8 +263,27 @@ _scripto()
         __scripto_debug "Calling _describe with grouped completions"
         local foundCompletions=0
 
+        # Set up prefix for partial completions
+        local prefixFlag=""
+        if [ -n "$toComplete" ]; then
+            __scripto_debug "toComplete $toComplete"
+            prefixFlag="-P $toComplete"
+        fi
+
+        #  local -a groupCompletions=(
+        #    "echo foobar:Run echo foobar"
+        #    "ls -la:List files"
+        #  )
+        #  local -a groupActual=(
+        #    "o foobar"
+        #    "ls -la"
+        #  )
+        #
+        #  _describe 'Commands' groupCompletions groupActual -J 'mygroup'
+        #  return 0
         # Call _describe for each group
         for groupName in "${groupNames[@]}"; do
+            __scripto_debug "================================ $groupName ========================"
             local -a groupCompletions
             local separator=$'\x1F'  # ASCII Unit Separator (rare character)
 
@@ -235,37 +294,41 @@ _scripto()
             __scripto_debug "Group: $groupName, completions: ${groupCompletions[*]}"
 
             if [ ${#groupCompletions[@]} -gt 0 ]; then
-                # Call _describe for this group
-                if eval _describe $keepOrder "$groupName" groupCompletions $flagPrefix $noSpace -Q -o nosort -J "$groupName"; then
+                __scripto_debug "Array size - groupCompletions: ${#groupCompletions[@]}"
+                
+                # Call _describe for this group with prefix flag and force menu
+                if eval _describe $keepOrder -V "$groupName" groupCompletions $flagPrefix -Q; then
                     __scripto_debug "_describe found completions for group: $groupName"
                     foundCompletions=1
+                else
+                    __scripto_debug "_describe failed for group: $groupName (exit code: $?)"
                 fi
             fi
         done
 
-        if [ $foundCompletions -eq 1 ]; then
-            # Return the success of having called _describe
-            return 0
-        else
-            __scripto_debug "_describe did not find completions."
-            __scripto_debug "Checking if we should do file completion."
-            if [ $((directive & shellCompDirectiveNoFileComp)) -ne 0 ]; then
-                __scripto_debug "deactivating file completion"
-
-                # We must return an error code here to let zsh know that there were no
-                # completions found by _describe; this is what will trigger other
-                # matching algorithms to attempt to find completions.
-                # For example zsh can match letters in the middle of words.
-                return 1
-            else
-                # Perform file completion
-                __scripto_debug "Activating file completion"
-
-                # We must return the result of this command, so it must be the
-                # last command, or else we must store its result to return it.
-                _arguments '*:filename:_files'" ${flagPrefix}"
-            fi
-        fi
+#        if [ $foundCompletions -eq 1 ]; then
+#            # Return the success of having called _describe
+#            return 0
+#        else
+#            __scripto_debug "_describe did not find completions."
+#            __scripto_debug "Checking if we should do file completion."
+#            if [ $((directive & shellCompDirectiveNoFileComp)) -ne 0 ]; then
+#                __scripto_debug "deactivating file completion"
+#
+#                # We must return an error code here to let zsh know that there were no
+#                # completions found by _describe; this is what will trigger other
+#                # matching algorithms to attempt to find completions.
+#                # For example zsh can match letters in the middle of words.
+#                return 1
+#            else
+#                # Perform file completion
+#                __scripto_debug "Activating file completion"
+#
+#                # We must return the result of this command, so it must be the
+#                # last command, or else we must store its result to return it.
+#                _arguments '*:filename:_files'" ${flagPrefix}"
+#            fi
+#        fi
     fi
 }
 

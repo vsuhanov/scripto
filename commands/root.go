@@ -249,7 +249,8 @@ func executeCommand(command string) error {
 }
 
 // convertScriptResultsToSuggestions converts script matcher results to completion suggestions
-func convertScriptResultsToSuggestions(results []script.MatchResult, separator string) []string {
+func convertScriptResultsToSuggestions(results []script.MatchResult, separator string, toComplete string) []string {
+	// log.Printf("convertScriptResultsToSuggestions: toComplete=%s, separator=%s", toComplete, separator)
 	var suggestions []string
 	for _, result := range results {
 		if result.Script.Name != "" {
@@ -258,21 +259,49 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 			if description == "" {
 				description = result.Script.Command
 			}
-			suggestions = append(suggestions, result.Directory+separator+result.Script.Name+separator+description)
+
+			// Filter and strip prefix if needed
+			name := result.Script.Name
+			if toComplete != "" {
+				if !strings.HasPrefix(name, toComplete) {
+					continue // Skip if doesn't match prefix
+				}
+				// //log.Printf("Prefix matched: %s", toComplete)
+				// name = strings.TrimPrefix(name, toComplete)
+			}
+
+			suggestions = append(suggestions, result.Directory+separator+name+separator+description)
 		} else {
 			// Unnamed script - show command, use scope as group name
 			command := result.Script.Command
-			if len(command) > 50 {
-				command = command[:47] + "..."
+			displayCommand := command
+			if len(displayCommand) > 50 {
+				displayCommand = displayCommand[:47] + "..."
 			}
-			suggestions = append(suggestions, result.Directory+separator+command+separator+result.Script.Command)
+
+			// Filter and strip prefix if needed
+			if toComplete != "" {
+				if !strings.HasPrefix(command, toComplete) {
+					continue // Skip if doesn't match prefix
+				}
+				// command = strings.TrimPrefix(command, toComplete)
+				// //log.Printf("Prefix matched: %s", toComplete)
+
+				// Update display command too
+				displayCommand = command
+				if len(displayCommand) > 50 {
+					displayCommand = displayCommand[:47] + "..."
+				}
+			}
+
+			suggestions = append(suggestions, result.Directory+separator+displayCommand+separator+result.Script.Command)
 		}
 	}
 	return suggestions
 }
 
 // getCompletionSuggestions provides completion suggestions for zsh
-func getCompletionSuggestions(cmdArgs []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func getCompletionSuggestions(toComplete string) ([]string, cobra.ShellCompDirective) {
 	separator := "\x1F"
 
 	// Load configuration
@@ -288,39 +317,15 @@ func getCompletionSuggestions(cmdArgs []string, toComplete string) ([]string, co
 
 	matcher := script.NewMatcher(config)
 
-	// If no args provided, show all available scripts
-	if len(cmdArgs) == 0 {
-		allScripts, err := matcher.FindAllScripts()
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		suggestions := convertScriptResultsToSuggestions(allScripts, separator)
-		return suggestions, cobra.ShellCompDirectiveNoFileComp
+	// Always find all scripts and filter by prefix
+	allScripts, err := matcher.FindAllScripts()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
 	}
 
-	// If we have args, try to provide context-aware completion
-	if len(cmdArgs) == 1 {
-		// Check if this might be a named script
-		firstArg := cmdArgs[0]
-		matchResult, err := matcher.Match(firstArg)
-		if err == nil && matchResult.Type == script.ExactName {
-			// This is a named script, provide argument completions
-			processor := args.NewArgumentProcessor(matchResult.Script)
-			return processor.GetCompletionSuggestions([]string{}), cobra.ShellCompDirectiveNoFileComp
-		}
-
-		// Otherwise, filter scripts by keyword
-		filtered, err := matcher.FilterByKeyword(toComplete)
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveError
-		}
-
-		suggestions := convertScriptResultsToSuggestions(filtered, separator)
-		return suggestions, cobra.ShellCompDirectiveNoFileComp
-	}
-
-	return nil, cobra.ShellCompDirectiveNoFileComp
+	// log.Printf("getCompletionSuggestions: toComplete=%s, allScripts count=%d", toComplete, len(allScripts))
+	suggestions := convertScriptResultsToSuggestions(allScripts, separator, toComplete)
+	return suggestions, cobra.ShellCompDirectiveNoFileComp
 }
 
 func Execute() {
@@ -368,23 +373,22 @@ func Execute() {
 // handleCompletion handles the __complete command directly, bypassing Cobra's built-in completion
 func handleCompletion(args []string) {
 	// Parse the completion arguments to extract the command being completed
-	var cmdArgs []string
 	var toComplete string
+	// log.Printf("handleCompletion: args=%v", args)
 
-	// The args should be the command parts, with the last one being the part to complete
 	// If the last argument is empty (""), it means we're completing after a space
 	if len(args) > 0 && args[len(args)-1] == "" {
-		// Remove the empty string and use the previous args
-		cmdArgs = args[:len(args)-1]
-		toComplete = ""
+		// Remove the empty string and use the previous args as full command
+		// log.Printf("remove empty string")
+		toComplete = strings.Join(args[:len(args)-1], " ")
 	} else if len(args) > 0 {
-		// The last argument is what we're trying to complete
-		cmdArgs = args[:len(args)-1]
-		toComplete = args[len(args)-1]
+		// Use all arguments as the full command being completed
+		toComplete = strings.Join(args, " ")
 	}
 
+	// log.Printf("handleCompletion: toComplete=%s", toComplete)
 	// Get completion suggestions using the existing logic
-	suggestions, _ := getCompletionSuggestions(cmdArgs, toComplete)
+	suggestions, _ := getCompletionSuggestions(toComplete)
 
 	// Print suggestions in the format expected by shell completion
 	for _, suggestion := range suggestions {
