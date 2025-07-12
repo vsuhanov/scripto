@@ -236,7 +236,18 @@ func convertToArgs(values map[string]string) []string {
 
 // executeCommand outputs the command for shell function to evaluate
 func executeCommand(command string) error {
-	// Output the command for shell function to evaluate
+	// Check if we have a custom file descriptor for command output
+	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
+	if cmdFdPath != "" {
+		// Write command to custom descriptor file
+		err := os.WriteFile(cmdFdPath, []byte(command), 0600)
+		if err != nil {
+			return fmt.Errorf("failed to write command to descriptor: %w", err)
+		}
+		return nil
+	}
+
+	// Fallback to stdout for backward compatibility
 	fmt.Print(command)
 	return nil
 }
@@ -382,9 +393,17 @@ func handleCompletion(args []string) {
 		toComplete = strings.Join(args, " ")
 	}
 
-	// log.Printf("handleCompletion: toComplete=%s", toComplete)
-	// Get completion suggestions using the existing logic
-	suggestions, _ := getCompletionSuggestions(toComplete)
+	// Strip leading quotes from toComplete for matching (handle both escaped and unescaped quotes)
+	cleanToComplete := toComplete
+	if strings.HasPrefix(cleanToComplete, "\\\"") {
+		cleanToComplete = strings.TrimPrefix(cleanToComplete, "\\\"")
+	} else if strings.HasPrefix(cleanToComplete, "\"") {
+		cleanToComplete = strings.TrimPrefix(cleanToComplete, "\"")
+	}
+
+	// log.Printf("handleCompletion: toComplete=%s, cleanToComplete=%s", toComplete, cleanToComplete)
+	// Get completion suggestions using the cleaned string
+	suggestions, _ := getCompletionSuggestions(cleanToComplete)
 
 	// Print suggestions in the format expected by shell completion
 	for _, suggestion := range suggestions {

@@ -229,7 +229,7 @@ _scripto()
 #   done
 #   return 0
 # -------------------------------------------------------------
-    #   local toComplete="${words[@]:1}"
+#       local toComplete="${words[@]:1}"
 #   __scripto_debug $toComplete
 #
 #   local -a completions=(
@@ -246,7 +246,9 @@ _scripto()
 #     "bar4"
 #     )
 #
-#       compadd -d displays  -a completions
+##       compadd -Q -d displays  -a completions
+##
+#    local -a insertions
 #   for comp in "${completions[@]}"; do
 #     local full="${comp%%:*}"
 #     local descr=${comp#*:}
@@ -260,12 +262,17 @@ _scripto()
 #       [[ -z "$insertion" ]] && insertion="$full"
 #
 #       __scripto_debug "insertion: $insertion"
-#       local -a displayArray=("$full")
-#       compadd -U -Q -d displayArray -V "$insertion" -P "$words[CURRENT]" -- "$insertion"
+##       local -a displayArray=("$full")
+#        insertions+=$insertion
 #     fi
 #   done
+#     compadd -U -Q -d displays -x "groupA" -J "groupA" -P "$words[CURRENT]" -a insertions
+#     compadd -U -Q -d displays -x "groupB" -J "groupB" -P "$words[CURRENT]" -a insertions
 #    return 0
 # -------------------------------------------------------------
+
+    local separator=$'\x1F'  # ASCII Unit Separator (rare character)
+    local toComplete="${words[@]:1}"
 
     local shellCompDirectiveError=1
     local shellCompDirectiveNoSpace=2
@@ -296,7 +303,6 @@ _scripto()
     __scripto_debug "lastParam: ${lastParam}, lastChar: ${lastChar}"
     
     # Set toComplete for prefix stripping logic
-    local toComplete="${words[@]:1}"
 #
 #    local toComplete=""
 #    if [ "${lastChar}" != "" ]; then
@@ -313,7 +319,14 @@ _scripto()
     fi
 
     # Prepare the command to obtain completions
-    requestComp="command ${words[1]} __complete ${words[2,-1]}"
+    # Properly escape arguments before passing to completion
+    local -a escapedArgs
+    for arg in "${words[@]:2}"; do
+        # Escape quotes and backslashes in the argument
+        escapedArgs+=("$(printf '%q' "$arg")")
+    done
+    
+    requestComp="command ${words[1]} __complete ${escapedArgs[*]}"
     if [ "${lastChar}" = "" ]; then
         # If the last parameter is complete (there is a space following it)
         # We add an extra empty parameter so we can indicate this to the go completion code.
@@ -361,7 +374,8 @@ _scripto()
     local hasActiveHelp=0
     
     # Use associative arrays to group completions by group name
-    local -A groupedCompletions
+    local -A groupedDisplays
+    local -A groupedInsertions
     local -a groupNames
     local tab="$(printf '\t')"
 
@@ -373,18 +387,6 @@ _scripto()
         __scripto_debug "===================== out ===================="
         __scripto_debug $comp
         __scripto_debug "===================== out ===================="
-        # Check if this is an activeHelp statement (i.e., prefixed with $activeHelpMarker)
-#        if [ "${comp[1,$endIndex]}" = "$activeHelpMarker" ];then
-#            __scripto_debug "ActiveHelp found: $comp"
-#            comp="${comp[$startIndex,-1]}"
-#            if [ -n "$comp" ]; then
-#                compadd -x "${comp}"
-#                __scripto_debug "ActiveHelp will need delimiter"
-#                hasActiveHelp=1
-#            fi
-#
-#            continue
-#        fi
 
         if [ -n "$comp" ]; then
             local groupName="" completion="" description=""
@@ -411,31 +413,50 @@ _scripto()
                   # If insertion is empty (exact match), insert full thing
                   [[ -z "$insertion" ]] && insertion="$completion"
 
-                  __scripto_debug "insertion: $insertion"
-#                  local -a displayArray=("$full")
-                  local -a display=("$completion -- $description")
-                  local -a insertionA=("$insertion")
-#                  compadd -x "--- $groupName ---"
-                  compadd -U -Q -d display -a insertionA -P "$words[CURRENT]"
-#                  compadd -U -Q -d display -a insertionA -V "$groupName" -x "--- $groupName ---" -P "$words[CURRENT]"
+                  __scripto_debug "insertion: $insertion for group: $groupName"
+                  
+                  # Add to grouped arrays
+                  if [[ -z "${groupedDisplays[$groupName]}" ]]; then
+                      groupedDisplays[$groupName]="$completion -- $description"
+                      groupedInsertions[$groupName]="$insertion"
+                      groupNames+=("$groupName")
+                  else
+                      groupedDisplays[$groupName]="${groupedDisplays[$groupName]}$separator$completion -- $description"
+                      groupedInsertions[$groupName]="${groupedInsertions[$groupName]}$separator$insertion"
+                  fi
                 fi
-#                compadd -U -Q  -V "$insertion" -P "$words[CURRENT]" -- "$insertion"
-#                # Combine completion and description with : separator for zsh
-#                local completionWithDesc="${completion}:${description}"
-#
-#                __scripto_debug "Parsed group: ${groupName}, completion: ${completion}, description: ${description}"
-#
-#                # Add to grouped completions using a unique separator
-#                if [[ -z "${groupedCompletions[$groupName]}" ]]; then
-#                    groupedCompletions[$groupName]="$completionWithDesc"
-#                    groupNames+=("$groupName")
-#                else
-#                    groupedCompletions[$groupName]="${groupedCompletions[$groupName]}${separator}$completionWithDesc"
-#                fi
             fi
-
         fi
     done < <(printf "%s\n" "${out[@]}")
+
+    # Now add completions grouped by group name
+    for groupName in "${groupNames[@]}"; do
+        __scripto_debug "Processing group: $groupName"
+        
+        # Create arrays for this group
+        local -a display
+        local -a insertionA
+        
+        # Split the space-separated strings back into arrays
+        IFS=$separator read -rA display <<< "${groupedDisplays[$groupName]}"
+        IFS=$separator read -rA insertionA <<< "${groupedInsertions[$groupName]}"
+        
+        __scripto_debug "Group $groupName: ${#display[@]} items"
+        
+        # Add group header and completions
+        local quoteFlag=""
+        if [ -z "$toComplete" ]; then
+            quoteFlag='-i "\"\""'
+        fi
+        
+        __scripto_debug "compadd -U -Q -d display -x \"$groupName\" -J \"$groupName\" -P \"$words[CURRENT]\" $quoteFlag -a insertionA"
+        
+        compadd -U -d display -l -x "--- $groupName ---" -J "$groupName" -P "$words[CURRENT]" -a insertionA
+#        if [ -z "$toComplete" ]; then
+#        else
+#            compadd -U -Q -d display -l -x "--- $groupName ---" -J "$groupName" -P "$words[CURRENT]" -a insertionA
+#        fi
+    done
 
     return 0
     # Add a delimiter after the activeHelp statements, but only if:
