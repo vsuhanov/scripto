@@ -9,6 +9,7 @@ import (
 	"scripto/internal/prompt"
 	"scripto/internal/script"
 	"scripto/internal/storage"
+	"scripto/internal/tui"
 
 	"github.com/spf13/cobra"
 )
@@ -19,17 +20,36 @@ var rootCmd = &cobra.Command{
 	Long: `Scripto allows you to store and execute command scripts with placeholders.
 
 Examples:
-  scripto                           # Show TUI (not implemented yet)
+  scripto                           # Launch interactive TUI
   scripto echo hello               # Execute script matching "echo hello"
   scripto deploy myapp 8080        # Execute "deploy" script with positional args
   scripto backup --host=localhost  # Execute "backup" script with named args`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
-			// No arguments - show TUI or help
-			fmt.Println("TUI not implemented yet")
-			fmt.Println("Use 'scripto --help' for usage information")
-			return
+			// No arguments - launch TUI
+			result, err := tui.RunWithResult()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+				os.Exit(1)
+			}
+
+			switch result.Action {
+			case tui.ActionExecute:
+				// Execute the selected script
+				if err := executeCommand(result.ScriptPath); err != nil {
+					fmt.Fprintf(os.Stderr, "Error executing script: %v\n", err)
+					os.Exit(1)
+				}
+			case tui.ActionEdit:
+				// Write script path for editor and exit with special code
+				if err := executeCommand(result.ScriptPath); err != nil {
+					fmt.Fprintf(os.Stderr, "Error writing script path: %v\n", err)
+					os.Exit(1)
+				}
+			}
+
+			os.Exit(result.ExitCode)
 		}
 
 		// Execute script matching logic

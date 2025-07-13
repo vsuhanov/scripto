@@ -29,6 +29,37 @@ scripto() {
         # Built-in command completed - cleanup and return success
         rm -f "$cmd_file"
         return 0
+    elif [ $exit_code -eq 4 ] && [ -s "$cmd_file" ]; then
+        # Edit mode - read script path and open in editor
+        local script_path=$(cat "$cmd_file")
+        rm -f "$cmd_file"
+        
+        # Determine which editor to use
+        local editor="${SCRIPTO_EDITOR:-${EDITOR:-vi}}"
+        
+        # Open the script file in the editor
+        "$editor" "$script_path"
+        local editor_exit=$?
+        
+        # After editing, prompt user if they want to execute the script
+        echo -n "Execute the edited script? (y/N): "
+        read -r response
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            # Execute the script
+            if [[ "$script_path" == *".zsh" ]] || [[ "$script_path" == *".sh" ]]; then
+                source "$script_path"
+                return $?
+            else
+                # Fallback to reading file content and eval
+                local script_content=$(cat "$script_path" 2>/dev/null)
+                if [ -n "$script_content" ]; then
+                    eval "$script_content"
+                    return $?
+                fi
+            fi
+        fi
+        
+        return $editor_exit
     else
         # Error occurred - cleanup and return error
         rm -f "$cmd_file"

@@ -1,0 +1,26 @@
+{
+  "global": [
+    {
+      "name": "hello",
+      "command": "echo 'Hello from global script!'",
+      "placeholders": [],
+      "description": "A simple global greeting script",
+      "file_path": "/Users/vitaly/projects/scripto/test/scripts/hello.zsh"
+    }
+  ],
+  "/Users/vitaly/projects/scripto": [
+    {
+      "name": "build",
+      "command": "go build -o bin/scripto ./cmd/scripto",
+      "placeholders": [],
+      "description": "Build the scripto binary",
+      "file_path": "/Users/vitaly/projects/scripto/test/scripts/build.zsh"
+    },
+    {
+      "name": "",
+      "command": "ls -la",
+      "placeholders": [],
+      "description": "List files in current directory"
+    }
+  ]
+}
