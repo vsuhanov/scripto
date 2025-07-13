@@ -1,0 +1,139 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on version tags like v1.0.0, v2.1.3, etc.
+
+permissions:
+  contents: write  # Required for creating releases
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23.4'
+        
+    - name: Get version from tag
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+    - name: Verify Go version and modules
+      run: |
+        go version
+        go mod tidy
+        go mod verify
+        
+    - name: Run tests
+      run: go test ./...
+      
+    - name: Build ARM64 macOS binary
+      env:
+        GOOS: darwin
+        GOARCH: arm64
+      run: |
+        go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" \
+          -o scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64 \
+          .
+          
+    - name: Create archive
+      run: |
+        mkdir -p release
+        cp scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64 release/scripto
+        cp README.md release/
+        cp commands/scripts/scripto.zsh release/
+        tar -czf scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz -C release .
+        
+    - name: Generate checksums
+      run: |
+        shasum -a 256 scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz > scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz.sha256
+        shasum -a 256 scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64 > scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.sha256
+        
+    - name: Extract changelog for this version
+      id: changelog
+      run: |
+        if [ -f CHANGELOG.md ]; then
+          # Extract changelog section for this version
+          sed -n "/## \[${{ steps.version.outputs.VERSION }}\]/,/## \[/p" CHANGELOG.md | sed '$d' > current_changelog.md
+          if [ -s current_changelog.md ]; then
+            echo "CHANGELOG_CONTENT<<EOF" >> $GITHUB_OUTPUT
+            cat current_changelog.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "CHANGELOG_CONTENT=No changelog entry found for this version." >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "CHANGELOG_CONTENT=Release ${{ steps.version.outputs.VERSION }}" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.version.outputs.VERSION }}
+        name: Release ${{ steps.version.outputs.VERSION }}
+        body: |
+          ## Scripto ${{ steps.version.outputs.VERSION }}
+          
+          ${{ steps.changelog.outputs.CHANGELOG_CONTENT }}
+          
+          ### Installation
+          
+          **ARM64 macOS:**
+          ```bash
+          # Download and extract
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz | tar -xz
+          
+          # Make executable and install
+          chmod +x scripto
+          sudo mv scripto /usr/local/bin/
+          
+          # Install shell integration
+          scripto install
+          ```
+          
+          **Manual verification:**
+          ```bash
+          # Verify checksum
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz.sha256
+          shasum -a 256 scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz
+          ```
+          
+          ### What's included:
+          - `scripto` - Main binary for ARM64 macOS
+          - `README.md` - Documentation
+          - `scripto.zsh` - Shell integration script
+          
+          See the [README](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/README.md) for complete usage instructions.
+        draft: false
+        prerelease: false
+        files: |
+          scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz
+          scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz.sha256
+          scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64
+          scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.sha256
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+  notify:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Notify success
+      if: needs.build-and-release.result == 'success'
+      run: |
+        echo "✅ Release ${{ github.ref_name }} created successfully!"
+        echo "🔗 Download: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+        
+    - name: Notify failure
+      if: needs.build-and-release.result == 'failure'
+      run: |
+        echo "❌ Release ${{ github.ref_name }} failed to build!"
+        exit 1
