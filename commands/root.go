@@ -115,7 +115,7 @@ func executeNamedScript(matchResult *script.MatchResult, remainingArgs []string)
 	}
 
 	// Execute the command
-	return executeCommand(result.FinalCommand)
+	return executeScriptFile(matchResult, result.FinalCommand)
 }
 
 // executePartialCommand executes a script found by partial command match
@@ -145,7 +145,7 @@ func executePartialCommand(matchResult *script.MatchResult, userArgs []string) e
 		result.FinalCommand = matchResult.Script.Command
 	}
 
-	return executeCommand(result.FinalCommand)
+	return executeScriptFile(matchResult, result.FinalCommand)
 }
 
 // handleNoMatch handles the case when no script matches
@@ -232,6 +232,17 @@ func convertToArgs(values map[string]string) []string {
 		arguments = append(arguments, fmt.Sprintf("--%s=%s", name, value))
 	}
 	return arguments
+}
+
+// executeScriptFile executes a script, preferring file path if available
+func executeScriptFile(matchResult *script.MatchResult, finalCommand string) error {
+	// If the script has a file path, use that for execution
+	if matchResult.Script.FilePath != "" {
+		return executeCommand(matchResult.Script.FilePath)
+	}
+
+	// Fallback to direct command execution for scripts without file paths
+	return executeCommand(finalCommand)
 }
 
 // executeCommand outputs the command for shell function to evaluate

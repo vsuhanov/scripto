@@ -81,11 +81,18 @@ func StoreScript(config storage.Config, configPath string, name, command, descri
 	// Parse placeholders from command
 	placeholders := ParsePlaceholders(command)
 
+	// Save script to file
+	filePath, err := storage.SaveScriptToFile(name, command)
+	if err != nil {
+		return fmt.Errorf("failed to save script to file: %w", err)
+	}
+
 	script := storage.Script{
 		Name:         name,
 		Command:      command,
 		Placeholders: placeholders,
 		Description:  description,
+		FilePath:     filePath,
 	}
 
 	// Determine scope
