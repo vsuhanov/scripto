@@ -68,8 +68,13 @@ func RunWithResult() (TUIResult, error) {
 
 	// Extract result from final model
 	if m, ok := finalModel.(Model); ok {
-		// Check for edit mode
-		if m.editMode && m.selectedIdx >= 0 && m.selectedIdx < len(m.scripts) {
+		// Check if user quit - don't execute anything
+		if m.quitting {
+			return TUIResult{ExitCode: 3}, nil // Normal quit
+		}
+
+		// Check for external edit mode
+		if m.editMode && m.externalEdit && m.selectedIdx >= 0 && m.selectedIdx < len(m.scripts) {
 			selected := m.scripts[m.selectedIdx]
 			scriptPath := selected.Script.FilePath
 

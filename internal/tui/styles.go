@@ -94,6 +94,61 @@ var (
 	ErrorStyle = lipgloss.NewStyle().
 			Foreground(errorColor).
 			Bold(true)
+
+	// Popup styles
+	PopupStyle = lipgloss.NewStyle().
+			Background(bgColor).
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(primaryColor).
+			Padding(1).
+			Margin(2)
+
+	PopupTitleStyle = lipgloss.NewStyle().
+			Foreground(primaryColor).
+			Bold(true).
+			Align(lipgloss.Center).
+			Margin(0, 0, 1, 0)
+
+	// Form field styles
+	FieldLabelStyle = lipgloss.NewStyle().
+			Foreground(textColor).
+			Bold(true).
+			Margin(0, 0, 0, 0)
+
+	FieldInputStyle = lipgloss.NewStyle().
+			Foreground(textColor).
+			Background(lipgloss.Color("#374151")).
+			Padding(0, 1).
+			Margin(0, 0, 1, 0)
+
+	FieldInputFocusedStyle = lipgloss.NewStyle().
+				Foreground(selectedTextColor).
+				Background(selectedBgColor).
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderForeground(primaryColor).
+				Padding(0, 1).
+				Margin(0, 0, 1, 0)
+
+	TextAreaStyle = lipgloss.NewStyle().
+			Foreground(textColor).
+			Background(lipgloss.Color("#374151")).
+			Padding(1).
+			Margin(0, 0, 1, 0)
+
+	TextAreaFocusedStyle = lipgloss.NewStyle().
+				Foreground(selectedTextColor).
+				Background(selectedBgColor).
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderForeground(primaryColor).
+				Padding(1).
+				Margin(0, 0, 1, 0)
+
+	CheckboxStyle = lipgloss.NewStyle().
+			Foreground(textColor)
+
+	CheckboxCheckedStyle = lipgloss.NewStyle().
+				Foreground(successColor).
+				Bold(true)
 )
 
 // GetScopeStyle returns the appropriate style for a script scope

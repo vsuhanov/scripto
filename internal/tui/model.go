@@ -31,10 +31,15 @@ type Model struct {
 	// Operation state
 	showHelp      bool
 	editMode      bool
+	externalEdit  bool
 	nameEditMode  bool
 	deleteMode    bool
 	confirmDelete bool
 	statusMsg     string
+	quitting      bool
+
+	// Edit popup
+	editPopup *EditPopup
 }
 
 // Messages for the TUI
@@ -98,8 +103,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg handles keyboard input
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle edit popup events first
+	if m.editPopup != nil && m.editPopup.active {
+		updatedPopup, cmd := m.editPopup.Update(msg)
+		m.editPopup = &updatedPopup
+
+		// Check if popup was closed
+		if !m.editPopup.active {
+			m.editPopup = nil
+			// If there's a command (like save), execute it and reload scripts
+			if cmd != nil {
+				return m, tea.Sequence(cmd, loadScripts())
+			}
+		}
+
+		return m, cmd
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "q":
+		m.quitting = true
 		return m, tea.Quit
 
 	case "?":
@@ -110,7 +133,10 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleEnter()
 
 	case "e":
-		return m.handleEdit()
+		return m.handleInlineEdit()
+
+	case "E":
+		return m.handleExternalEdit()
 
 	case "n":
 		return m.handleNameEdit()
@@ -195,7 +221,21 @@ func (m Model) handleEnter() (tea.Model, tea.Cmd) {
 	)
 }
 
-func (m Model) handleEdit() (tea.Model, tea.Cmd) {
+func (m Model) handleInlineEdit() (tea.Model, tea.Cmd) {
+	if len(m.scripts) == 0 {
+		return m, nil
+	}
+
+	selected := m.scripts[m.selectedIdx]
+
+	// Create edit popup
+	popup := NewEditPopup(selected, m.width, m.height)
+	m.editPopup = &popup
+
+	return m, nil
+}
+
+func (m Model) handleExternalEdit() (tea.Model, tea.Cmd) {
 	if len(m.scripts) == 0 {
 		return m, nil
 	}
@@ -208,8 +248,9 @@ func (m Model) handleEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Set edit mode and quit
+	// Set external edit mode and quit
 	m.editMode = true
+	m.externalEdit = true
 	return m, tea.Quit
 }
 
@@ -340,6 +381,11 @@ func (m Model) View() string {
 		return m.renderHelp()
 	}
 
+	// Render edit popup if active
+	if m.editPopup != nil && m.editPopup.active {
+		return m.renderWithPopup()
+	}
+
 	// Calculate dimensions for two-pane layout
 	listWidth := m.width / 2
 	previewWidth := m.width - listWidth - 2 // Account for borders
@@ -377,7 +423,8 @@ func (m Model) renderStatusBar() string {
 	parts = append(parts, "q: quit")
 	parts = append(parts, "?: help")
 	parts = append(parts, "enter: execute")
-	parts = append(parts, "e: edit")
+	parts = append(parts, "e: edit inline")
+	parts = append(parts, "E: edit external")
 	parts = append(parts, "d: delete")
 	parts = append(parts, "D: delete (no confirm)")
 
@@ -389,6 +436,21 @@ func (m Model) renderStatusBar() string {
 	}
 
 	return StatusStyle.Width(m.width).Render(status)
+}
+
+// renderWithPopup renders the main view with edit popup overlay
+func (m Model) renderWithPopup() string {
+	// Render popup
+	popup := m.editPopup.View()
+
+	// Overlay popup centered on screen
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		popup,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("#40444b")),
+	)
 }
 
 // renderHelp renders the help screen
@@ -403,7 +465,8 @@ Navigation:
   
 Actions:  
   enter    Execute selected script
-  e        Edit script in external editor
+  e        Edit script inline (popup)
+  E        Edit script in external editor
   d        Delete script (with confirmation)
   D        Delete script (no confirmation)
   n        Add/edit script name
