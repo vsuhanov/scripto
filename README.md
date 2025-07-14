@@ -20,10 +20,44 @@ Scripto allows you to store command snippets with placeholders, organize them by
 
 ### Prerequisites
 
-- Go 1.23.4 or later
 - A Unix-like shell (bash, zsh, fish)
 
+### Download Pre-built Binary (Recommended)
+
+1. **Download the latest release from GitHub:**
+   ```bash
+   # Download the latest release (replace with actual download URL)
+   curl -L https://github.com/your-username/scripto/releases/latest/download/scripto-darwin-arm64.tar.gz -o scripto.tar.gz
+   tar -xzf scripto.tar.gz
+   ```
+
+2. **Add to your PATH:**
+   ```bash
+   # Move to a directory in your PATH
+   sudo mv scripto /usr/local/bin/
+   
+   # Or add to your local bin directory
+   mkdir -p ~/bin
+   mv scripto ~/bin/
+   echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc
+   ```
+
+3. **Install shell integration:**
+   ```bash
+   scripto install
+   ```
+
+4. **Restart your terminal session** or run:
+   ```bash
+   source ~/.zshrc
+   ```
+
 ### Build from Source
+
+For development or if pre-built binaries aren't available:
+
+**Prerequisites:**
+- Go 1.23.4 or later
 
 1. **Clone the repository:**
    ```bash
@@ -103,6 +137,43 @@ If you prefer manual setup:
    ```
 
 ## Usage
+
+### Basic Usage (Quick Start)
+
+The fastest way to get started is to save commands you've already run:
+
+**Save your last command:**
+```bash
+# After running a command, save it with a name
+scripto add --name "build" --global -- "!!"
+
+# Or save it locally (current directory only)
+scripto add --name "test" -- "!!"
+```
+
+**Execute saved commands:**
+```bash
+# Run by name
+scripto build
+scripto test
+
+# Or run the last command again
+scripto "!!"
+```
+
+**Quick workflow:**
+```bash
+# 1. Run a command
+go build -o bin/myapp ./cmd/myapp
+
+# 2. Save it for later
+scripto add --name "build" --global -- "!!"
+
+# 3. Use it anytime
+scripto build
+```
+
+The `!!` bash expansion refers to your last command, making it easy to save commands you've just tested.
 
 ### Interactive TUI (Recommended)
 
