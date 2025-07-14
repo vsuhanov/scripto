@@ -59,6 +59,32 @@ For full functionality, you need to install the shell wrapper function:
 source ~/.scripto/completion.zsh
 ```
 
+#### Installing with Custom Names
+
+Scripto supports installing under different command names for faster access:
+
+**Quick access with `sc` command:**
+```bash
+# Install scripto + sc alias
+./bin/scripto install --turbo
+
+# Now you can use either:
+scripto        # Full command
+sc             # Short alias
+```
+
+**Custom alias name:**
+```bash
+# Install with your preferred alias
+./bin/scripto install --alias myalias
+
+# Now you can use either:
+scripto        # Full command  
+myalias        # Your custom alias
+```
+
+Both the main `scripto` command and your alias will have full completion support. The alias simply points to the main `scripto` command, so all functionality is identical.
+
 #### Manual Installation
 If you prefer manual setup:
 
@@ -145,6 +171,10 @@ scripto add --name "deploy" --description "Deploy to server" "scp %file:File to 
 ```bash
 scripto build
 scripto deploy myapp.zip production-server
+
+# Or use your alias (if installed with --turbo or --alias)
+sc build
+myalias deploy myapp.zip production-server
 ```
 
 **By partial command:**
