@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"scripto/internal/storage"
+	"scripto/internal/tui"
 
 	"github.com/spf13/cobra"
 )
@@ -19,8 +20,12 @@ var addCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// Check if we have any command arguments
 		if len(args) == 0 {
-			fmt.Println("Error: command is required")
-			os.Exit(1)
+			// No arguments - launch TUI for command selection
+			if err := launchAddTUI(); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
 
 		configPath, err := storage.GetConfigPath()
@@ -122,6 +127,22 @@ func StoreScript(config storage.Config, configPath string, name, command, descri
 		return fmt.Errorf("failed to save script: %w", err)
 	}
 
+	return nil
+}
+
+// launchAddTUI launches the TUI for adding a new script with command history selection
+func launchAddTUI() error {
+	result, err := tui.RunAddTUI()
+	if err != nil {
+		return fmt.Errorf("TUI error: %w", err)
+	}
+
+	if result.Cancelled {
+		return nil
+	}
+
+	// Script was added successfully via TUI
+	fmt.Printf("Script added successfully\n")
 	return nil
 }
 

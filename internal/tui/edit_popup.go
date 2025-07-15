@@ -3,9 +3,10 @@ package tui
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/lipgloss"
 
 	"scripto/internal/script"
@@ -15,10 +16,10 @@ import (
 // EditPopup represents the edit form state
 type EditPopup struct {
 	// Form fields
-	name        string
-	description string
-	command     string
-	isGlobal    bool
+	nameInput        textinput.Model
+	descriptionInput textinput.Model
+	commandTextarea  textarea.Model
+	isGlobal         bool
 
 	// Form state
 	focusedField int // 0=name, 1=description, 2=command, 3=global, 4=save, 5=cancel
@@ -44,17 +45,51 @@ const (
 
 // NewEditPopup creates a new edit popup
 func NewEditPopup(script script.MatchResult, width, height int) EditPopup {
+	// Calculate component width
+	componentWidth := min(70, width-15)
+
+	// Create name input
+	nameInput := textinput.New()
+	nameInput.Placeholder = "Script name"
+	nameInput.SetValue(script.Script.Name)
+	nameInput.CharLimit = 100
+	nameInput.Width = componentWidth
+	nameInput.Focus()
+
+	// Create description input
+	descriptionInput := textinput.New()
+	descriptionInput.Placeholder = "Script description"
+	descriptionInput.SetValue(script.Script.Description)
+	descriptionInput.CharLimit = 200
+	descriptionInput.Width = componentWidth
+
+	// Create command textarea
+	commandTextarea := textarea.New()
+	commandTextarea.Placeholder = "Enter command here..."
+	commandTextarea.SetValue(script.Script.Command)
+	commandTextarea.SetWidth(componentWidth)
+	commandTextarea.SetHeight(6)
+
 	return EditPopup{
-		name:           script.Script.Name,
-		description:    script.Script.Description,
-		command:        script.Script.Command,
-		isGlobal:       script.Scope == "global",
-		focusedField:   FieldName,
-		active:         true,
-		originalScript: script,
-		width:          width,
-		height:         height,
+		nameInput:        nameInput,
+		descriptionInput: descriptionInput,
+		commandTextarea:  commandTextarea,
+		isGlobal:         script.Scope == "global",
+		focusedField:     FieldName,
+		active:           true,
+		originalScript:   script,
+		width:            width,
+		height:           height,
 	}
+}
+
+// updateComponentSizes updates the sizes of all components when popup is resized
+func (e EditPopup) updateComponentSizes() {
+	componentWidth := min(70, e.width-15)
+
+	e.nameInput.Width = componentWidth
+	e.descriptionInput.Width = componentWidth
+	e.commandTextarea.SetWidth(componentWidth)
 }
 
 // Update handles popup events
@@ -65,10 +100,37 @@ func (e EditPopup) Update(msg tea.Msg) (EditPopup, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		return e.handleKeyMsg(msg)
+		// Handle navigation keys first
+		switch msg.String() {
+		case "tab", "shift+tab", "esc":
+			return e.handleKeyMsg(msg)
+		case "enter":
+			// Only handle enter for non-input fields
+			if e.focusedField == FieldSave || e.focusedField == FieldCancel || e.focusedField == FieldGlobal {
+				return e.handleKeyMsg(msg)
+			}
+			// For input fields, let the component handle enter
+		case "space":
+			// Only handle space for checkbox
+			if e.focusedField == FieldGlobal {
+				return e.handleKeyMsg(msg)
+			}
+			// For input fields, let the component handle space
+		}
 	}
 
-	return e, nil
+	// Update the focused component
+	var cmd tea.Cmd
+	switch e.focusedField {
+	case FieldName:
+		e.nameInput, cmd = e.nameInput.Update(msg)
+	case FieldDescription:
+		e.descriptionInput, cmd = e.descriptionInput.Update(msg)
+	case FieldCommand:
+		e.commandTextarea, cmd = e.commandTextarea.Update(msg)
+	}
+
+	return e, cmd
 }
 
 // handleKeyMsg handles keyboard input for the popup
@@ -76,17 +138,20 @@ func (e EditPopup) handleKeyMsg(msg tea.KeyMsg) (EditPopup, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		e.active = false
-		return e, func() tea.Msg { return StatusMsg("Edit cancelled") }
+		return e, func() tea.Msg { return NavigateBackMsg{} }
 
 	case "tab":
 		e.focusedField = (e.focusedField + 1) % FieldCount
+		(&e).updateFocus()
 		return e, nil
 
 	case "shift+tab":
 		e.focusedField = (e.focusedField - 1 + FieldCount) % FieldCount
+		(&e).updateFocus()
 		return e, nil
 
 	case "enter":
+		// Only handle enter for non-input fields
 		if e.focusedField == FieldSave && !e.saving {
 			e.saving = true
 			e.active = false // Close popup immediately
@@ -98,46 +163,33 @@ func (e EditPopup) handleKeyMsg(msg tea.KeyMsg) (EditPopup, tea.Cmd) {
 			e.isGlobal = !e.isGlobal
 			return e, nil
 		}
+		// For input fields, let the component handle enter
 
 	case "space":
 		if e.focusedField == FieldGlobal {
 			e.isGlobal = !e.isGlobal
 			return e, nil
 		}
-
-	case "backspace":
-		switch e.focusedField {
-		case FieldName:
-			if len(e.name) > 0 {
-				e.name = e.name[:len(e.name)-1]
-			}
-		case FieldDescription:
-			if len(e.description) > 0 {
-				e.description = e.description[:len(e.description)-1]
-			}
-		case FieldCommand:
-			if len(e.command) > 0 {
-				e.command = e.command[:len(e.command)-1]
-			}
-		}
-		return e, nil
-
-	default:
-		// Handle text input
-		if len(msg.String()) == 1 {
-			char := msg.String()
-			switch e.focusedField {
-			case FieldName:
-				e.name += char
-			case FieldDescription:
-				e.description += char
-			case FieldCommand:
-				e.command += char
-			}
-		}
+		// For input fields, let the component handle space
 	}
 
 	return e, nil
+}
+
+// updateFocus updates the focus state of all components
+func (e *EditPopup) updateFocus() {
+	e.nameInput.Blur()
+	e.descriptionInput.Blur()
+	e.commandTextarea.Blur()
+
+	switch e.focusedField {
+	case FieldName:
+		e.nameInput.Focus()
+	case FieldDescription:
+		e.descriptionInput.Focus()
+	case FieldCommand:
+		e.commandTextarea.Focus()
+	}
 }
 
 // saveScript saves the edited script
@@ -154,34 +206,38 @@ func (e EditPopup) saveScript() tea.Cmd {
 			return ErrorMsg(fmt.Errorf("failed to read config: %w", err))
 		}
 
-		// Remove the old script
-		oldKey := e.originalScript.Directory
-		if oldKey == "global" {
-			oldKey = "global"
-		}
+		// Check if this is a new script (empty original script) or an existing one
+		isNewScript := e.originalScript.Script.Name == "" && e.originalScript.Script.Command == "" && e.originalScript.Script.FilePath == ""
 
-		scriptRemoved := false
-		if scripts, exists := config[oldKey]; exists {
-			for i, script := range scripts {
-				// Use more precise matching including description
-				if script.Name == e.originalScript.Script.Name &&
-					script.Command == e.originalScript.Script.Command &&
-					script.FilePath == e.originalScript.Script.FilePath &&
-					script.Description == e.originalScript.Script.Description {
-					config[oldKey] = append(scripts[:i], scripts[i+1:]...)
-					if len(config[oldKey]) == 0 {
-						delete(config, oldKey)
+		if !isNewScript {
+			// Remove the old script for existing scripts
+			oldKey := e.originalScript.Directory
+			if oldKey == "global" {
+				oldKey = "global"
+			}
+
+			scriptRemoved := false
+			if scripts, exists := config[oldKey]; exists {
+				for i, script := range scripts {
+					// Use more precise matching including description
+					if script.Name == e.originalScript.Script.Name &&
+						script.Command == e.originalScript.Script.Command &&
+						script.FilePath == e.originalScript.Script.FilePath &&
+						script.Description == e.originalScript.Script.Description {
+						config[oldKey] = append(scripts[:i], scripts[i+1:]...)
+						if len(config[oldKey]) == 0 {
+							delete(config, oldKey)
+						}
+						scriptRemoved = true
+						break
 					}
-					scriptRemoved = true
-					break
 				}
 			}
-		}
 
-		// Only proceed if we removed the old script (for existing scripts)
-		// For new scripts (unnamed), we allow adding without removal
-		if !scriptRemoved && e.originalScript.Script.Name != "" {
-			return ErrorMsg(fmt.Errorf("could not find original script to update"))
+			// Only proceed if we removed the old script (for existing scripts)
+			if !scriptRemoved {
+				return ErrorMsg(fmt.Errorf("could not find original script to update"))
+			}
 		}
 
 		// Determine new key based on global setting
@@ -197,13 +253,34 @@ func (e EditPopup) saveScript() tea.Cmd {
 			newKey = cwd
 		}
 
+		// Get values from components
+		name := e.nameInput.Value()
+		description := e.descriptionInput.Value()
+		command := e.commandTextarea.Value()
+
+		// Parse placeholders from the command
+		placeholders := ParsePlaceholders(command)
+
+		// Create or update script file
+		var filePath string
+		if e.originalScript.Script.FilePath != "" {
+			filePath = e.originalScript.Script.FilePath
+		} else {
+			// Create new script file for new scripts
+			var err error
+			filePath, err = storage.SaveScriptToFile(name, command)
+			if err != nil {
+				return ErrorMsg(fmt.Errorf("failed to save script to file: %w", err))
+			}
+		}
+
 		// Create updated script
 		newScript := storage.Script{
-			Name:         e.name,
-			Command:      e.command,
-			Description:  e.description,
-			Placeholders: e.originalScript.Script.Placeholders, // Keep existing placeholders
-			FilePath:     e.originalScript.Script.FilePath,     // Keep existing file path
+			Name:         name,
+			Command:      command,
+			Description:  description,
+			Placeholders: placeholders,
+			FilePath:     filePath,
 		}
 
 		// Check if script with same name already exists in target location
@@ -234,7 +311,12 @@ func (e EditPopup) saveScript() tea.Cmd {
 			}
 		}
 
-		return StatusMsg("Script updated successfully")
+		// Return appropriate success message
+		if isNewScript {
+			return StatusMsg("Script added successfully")
+		} else {
+			return StatusMsg("Script updated successfully")
+		}
 	}
 }
 
@@ -250,27 +332,39 @@ func (e EditPopup) View() string {
 
 	var sections []string
 
-	// Title
-	title := PopupTitleStyle.Width(popupWidth).Render("Edit Script")
+	// Title - show different title for new vs existing scripts
+	var titleText string
+	if e.originalScript.Script.Name == "" && e.originalScript.Script.Command == "" && e.originalScript.Script.FilePath == "" {
+		titleText = "Add New Script"
+	} else {
+		titleText = "Edit Script"
+	}
+	title := PopupTitleStyle.Width(popupWidth).Render(titleText)
 	sections = append(sections, title)
 
 	// Name field
 	nameLabel := FieldLabelStyle.Render("Name:")
-	nameInput := e.renderInput(e.name, e.focusedField == FieldName, popupWidth-2)
+	if e.focusedField == FieldName {
+		nameLabel = FieldLabelStyle.Foreground(primaryColor).Render("Name:")
+	}
 	sections = append(sections, nameLabel)
-	sections = append(sections, nameInput)
+	sections = append(sections, e.nameInput.View())
 
 	// Description field
 	descLabel := FieldLabelStyle.Render("Description:")
-	descInput := e.renderInput(e.description, e.focusedField == FieldDescription, popupWidth-2)
+	if e.focusedField == FieldDescription {
+		descLabel = FieldLabelStyle.Foreground(primaryColor).Render("Description:")
+	}
 	sections = append(sections, descLabel)
-	sections = append(sections, descInput)
+	sections = append(sections, e.descriptionInput.View())
 
 	// Command field (textarea)
 	cmdLabel := FieldLabelStyle.Render("Command:")
-	cmdInput := e.renderTextArea(e.command, e.focusedField == FieldCommand, popupWidth-2, 6)
+	if e.focusedField == FieldCommand {
+		cmdLabel = FieldLabelStyle.Foreground(primaryColor).Render("Command:")
+	}
 	sections = append(sections, cmdLabel)
-	sections = append(sections, cmdInput)
+	sections = append(sections, e.commandTextarea.View())
 
 	// Global checkbox
 	globalCheckbox := e.renderCheckbox("Global script", e.isGlobal, e.focusedField == FieldGlobal)
@@ -290,73 +384,6 @@ func (e EditPopup) View() string {
 		Width(popupWidth).
 		Height(popupHeight).
 		Render(content)
-}
-
-// renderInput renders a single-line input field
-func (e EditPopup) renderInput(value string, focused bool, width int) string {
-	style := FieldInputStyle
-	if focused {
-		style = FieldInputFocusedStyle
-	}
-
-	// Add cursor if focused
-	displayValue := value
-	if focused {
-		displayValue += "│"
-	}
-
-	return style.Width(width).Render(displayValue)
-}
-
-// renderTextArea renders a multi-line text area
-func (e EditPopup) renderTextArea(value string, focused bool, width, height int) string {
-	style := TextAreaStyle
-	if focused {
-		style = TextAreaFocusedStyle
-	}
-
-	// Wrap text to fit width
-	lines := strings.Split(value, "\n")
-	var wrappedLines []string
-	for _, line := range lines {
-		if len(line) <= width-4 {
-			wrappedLines = append(wrappedLines, line)
-		} else {
-			// Simple word wrapping
-			words := strings.Fields(line)
-			currentLine := ""
-			for _, word := range words {
-				if len(currentLine)+len(word)+1 <= width-4 {
-					if currentLine != "" {
-						currentLine += " "
-					}
-					currentLine += word
-				} else {
-					if currentLine != "" {
-						wrappedLines = append(wrappedLines, currentLine)
-					}
-					currentLine = word
-				}
-			}
-			if currentLine != "" {
-				wrappedLines = append(wrappedLines, currentLine)
-			}
-		}
-	}
-
-	// Limit to height
-	if len(wrappedLines) > height {
-		wrappedLines = wrappedLines[:height]
-	}
-
-	content := strings.Join(wrappedLines, "\n")
-
-	// Add cursor if focused
-	if focused {
-		content += "│"
-	}
-
-	return style.Width(width).Height(height).Render(content)
 }
 
 // renderCheckbox renders a checkbox
@@ -400,4 +427,19 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ParsePlaceholders extracts placeholders in the format %variable:description% from a command
+func ParsePlaceholders(command string) []string {
+	re := regexp.MustCompile(`%([^:%]+):[^%]*%`)
+	matches := re.FindAllStringSubmatch(command, -1)
+
+	placeholders := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) > 1 {
+			placeholders = append(placeholders, match[1])
+		}
+	}
+
+	return placeholders
 }

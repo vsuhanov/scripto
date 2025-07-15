@@ -123,9 +123,7 @@ var (
 
 	FieldInputFocusedStyle = lipgloss.NewStyle().
 				Foreground(selectedTextColor).
-				Background(selectedBgColor).
-				BorderStyle(lipgloss.NormalBorder()).
-				BorderForeground(primaryColor).
+				Background(primaryColor).
 				Padding(0, 1).
 				Margin(0, 0, 1, 0)
 
@@ -137,9 +135,7 @@ var (
 
 	TextAreaFocusedStyle = lipgloss.NewStyle().
 				Foreground(selectedTextColor).
-				Background(selectedBgColor).
-				BorderStyle(lipgloss.NormalBorder()).
-				BorderForeground(primaryColor).
+				Background(primaryColor).
 				Padding(1).
 				Margin(0, 0, 1, 0)
 

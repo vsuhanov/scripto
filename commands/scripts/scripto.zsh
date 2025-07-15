@@ -2,9 +2,29 @@ scripto() {
     # Create a temporary file for command communication
     local cmd_file=$(mktemp)
     
+    # Check if this is a "scripto add" command with no additional arguments
+    # and generate shell history file if needed
+    local history_file=""
+    if [ "$1" = "add" ] && [ $# -eq 1 ]; then
+        # Create temporary file for shell history
+        history_file=$(mktemp)
+        
+        # Generate command history using fc and save to file
+        fc -l -10 2>/dev/null > "$history_file" || true
+        
+        # Set environment variable for scripto to find the history file
+        export SCRIPTO_SHELL_HISTORY_FILE_PATH="$history_file"
+    fi
+    
     # Run scripto with custom descriptor, allow normal interaction
     SCRIPTO_CMD_FD="$cmd_file" command scripto "$@"
     local exit_code=$?
+    
+    # Clean up history file if it was created
+    if [ -n "$history_file" ]; then
+        rm -f "$history_file"
+        unset SCRIPTO_SHELL_HISTORY_FILE_PATH
+    fi
     
     # Check if a command was written to the file
     if [ $exit_code -eq 0 ] && [ -s "$cmd_file" ]; then
