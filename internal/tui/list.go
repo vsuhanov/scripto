@@ -18,17 +18,19 @@ func (m Model) renderList(width, height int) string {
 
 	var items []string
 	var currentScope string
+	var currentDirectory string
 
 	for i, script := range m.scripts {
-		// Add scope header if scope changes
-		if script.Scope != currentScope {
+		// Add scope header if scope or directory changes
+		if script.Scope != currentScope || script.Directory != currentDirectory {
 			if currentScope != "" {
 				items = append(items, "") // Add spacing between scopes
 			}
 
-			scopeHeader := formatScopeHeader(script.Scope)
+			scopeHeader := formatScopeHeader(script.Scope, script.Directory)
 			items = append(items, scopeHeader)
 			currentScope = script.Scope
+			currentDirectory = script.Directory
 		}
 
 		// Format script item
@@ -89,23 +91,40 @@ func (m Model) formatScriptItem(script script.MatchResult, index int) string {
 	return ItemStyle.Render(item)
 }
 
-// formatScopeHeader formats a scope section header
-func formatScopeHeader(scope string) string {
+// formatScopeHeader formats a scope section header with directory name
+func formatScopeHeader(scope, directory string) string {
 	var header string
 	style := GetScopeStyle(scope)
 
 	switch scope {
 	case "local":
-		header = "● Local Scripts"
+		header = "● " + formatDirectoryName(directory)
 	case "parent":
-		header = "◐ Parent Directory Scripts"
+		header = "◐ " + formatDirectoryName(directory)
 	case "global":
 		header = "○ Global Scripts"
 	default:
-		header = scope
+		header = formatDirectoryName(directory)
 	}
 
 	return style.Bold(true).Render(header)
+}
+
+// formatDirectoryName formats a directory path for display with full paths
+func formatDirectoryName(dir string) string {
+	if dir == "global" {
+		return "Global Scripts"
+	}
+	
+	// Use the full absolute path
+	fullPath := dir
+	
+	// Truncate from the left if longer than 100 characters
+	if len(fullPath) > 100 {
+		return "..." + fullPath[len(fullPath)-97:] // 97 + 3 ("...") = 100
+	}
+	
+	return fullPath
 }
 
 // calculateScrollWindow calculates which lines to show for scrolling
