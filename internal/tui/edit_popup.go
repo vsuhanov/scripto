@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"scripto/internal/script"
@@ -207,7 +209,8 @@ func (e EditPopup) saveScript() tea.Cmd {
 		}
 
 		// Check if this is a new script (empty original script) or an existing one
-		isNewScript := e.originalScript.Script.Name == "" && e.originalScript.Script.Command == "" && e.originalScript.Script.FilePath == ""
+		// A script is considered new if it has no FilePath (hasn't been saved yet)
+		isNewScript := e.originalScript.Script.FilePath == ""
 
 		if !isNewScript {
 			// Remove the old script for existing scripts
@@ -334,7 +337,7 @@ func (e EditPopup) View() string {
 
 	// Title - show different title for new vs existing scripts
 	var titleText string
-	if e.originalScript.Script.Name == "" && e.originalScript.Script.Command == "" && e.originalScript.Script.FilePath == "" {
+	if e.originalScript.Script.FilePath == "" {
 		titleText = "Add New Script"
 	} else {
 		titleText = "Edit Script"
