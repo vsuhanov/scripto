@@ -186,6 +186,8 @@ func (h HistoryPopup) Update(msg tea.Msg) (HistoryPopup, tea.Cmd) {
 			return h.handleKeyMsg(msg)
 		case "enter":
 			return h.handleKeyMsg(msg)
+		case "s":
+			return h.handleKeyMsg(msg)
 		}
 		// Let the list handle other keys (navigation, filtering, etc.)
 	}
@@ -214,6 +216,13 @@ func (h HistoryPopup) handleKeyMsg(msg tea.KeyMsg) (HistoryPopup, tea.Cmd) {
 			}
 		}
 		return h, nil
+
+	case "s":
+		// Skip history and proceed to add screen with empty command
+		h.active = false
+		return h, func() tea.Msg {
+			return HistorySelectedMsg{command: ""}
+		}
 	}
 
 	return h, nil
@@ -227,7 +236,7 @@ func (h HistoryPopup) View() string {
 
 	// Calculate popup dimensions
 	popupWidth := min(100, h.width-8)
-	popupHeight := min(20, h.height-4)
+	popupHeight := min(22, h.height-4) // Increased height to accommodate help text
 
 	var content string
 
@@ -241,8 +250,15 @@ func (h HistoryPopup) View() string {
 		content = "Loading command history..."
 	} else {
 		// Update list size
-		h.list.SetSize(popupWidth-4, popupHeight-4)
-		content = h.list.View()
+		h.list.SetSize(popupWidth-4, popupHeight-8) // Leave room for help text
+		listContent := h.list.View()
+		
+		// Add help text
+		helpText := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("244")).
+			Render("Enter: select • s: skip history • Esc: cancel")
+		
+		content = listContent + "\n\n" + helpText
 	}
 
 	return PopupStyle.
