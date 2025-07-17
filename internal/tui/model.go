@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -41,6 +42,9 @@ type Model struct {
 
 	// Edit popup
 	editPopup *EditPopup
+
+	// Viewport for preview
+	viewport viewport.Model
 }
 
 // Messages for the TUI
@@ -57,6 +61,7 @@ func NewModel() Model {
 	return Model{
 		focusedPane: "list",
 		ready:       false,
+		viewport:    viewport.New(0, 0),
 	}
 }
 
@@ -75,6 +80,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
+		// Update viewport size
+		previewWidth := m.width/2 - 2
+		previewHeight := m.height - 4
+		m.viewport.Width = previewWidth
+		m.viewport.Height = previewHeight
 		return m, nil
 
 	case ScriptsLoadedMsg:
@@ -85,6 +95,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.selectedIdx >= len(m.scripts) {
 			m.selectedIdx = len(m.scripts) - 1
 		}
+		// Update viewport content
+		m.updateViewportContent()
 		return m, nil
 
 	case ErrorMsg:
@@ -165,9 +177,17 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "j", "down":
+		if m.focusedPane == "preview" {
+			m.viewport.LineDown(1)
+			return m, nil
+		}
 		return m.handleDown(), nil
 
 	case "k", "up":
+		if m.focusedPane == "preview" {
+			m.viewport.LineUp(1)
+			return m, nil
+		}
 		return m.handleUp(), nil
 
 	case "tab":
@@ -181,6 +201,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleUp() Model {
 	if len(m.scripts) > 0 {
 		m.selectedIdx = (m.selectedIdx - 1 + len(m.scripts)) % len(m.scripts)
+		m.updateViewportContent()
 	}
 	return m
 }
@@ -188,6 +209,7 @@ func (m Model) handleUp() Model {
 func (m Model) handleDown() Model {
 	if len(m.scripts) > 0 {
 		m.selectedIdx = (m.selectedIdx + 1) % len(m.scripts)
+		m.updateViewportContent()
 	}
 	return m
 }
@@ -392,7 +414,7 @@ func (m Model) View() string {
 	previewWidth := m.width - listWidth - 2 // Account for borders
 
 	listView := m.renderList(listWidth, m.height-4) // Account for status bar
-	previewView := m.renderPreview(previewWidth, m.height-4)
+	previewView := m.renderPreviewWithViewport(previewWidth, m.height-4)
 
 	// Combine panes horizontally
 	content := lipgloss.JoinHorizontal(
@@ -510,6 +532,70 @@ func loadScripts() tea.Cmd {
 
 		return ScriptsLoadedMsg(scripts)
 	}
+}
+
+// updateViewportContent updates the viewport content with current script info
+func (m *Model) updateViewportContent() {
+	if len(m.scripts) == 0 {
+		m.viewport.SetContent("No script selected")
+		return
+	}
+
+	selected := m.scripts[m.selectedIdx]
+	content := m.formatViewportContent(selected)
+	m.viewport.SetContent(content)
+	m.viewport.GotoTop()
+}
+
+// formatViewportContent formats content for the viewport (without Command: section)
+func (m Model) formatViewportContent(selected script.MatchResult) string {
+	var sections []string
+
+	// Script title
+	title := m.formatPreviewTitle(selected)
+	sections = append(sections, title)
+
+	// Script metadata
+	metadata := m.formatPreviewMetadata(selected)
+	sections = append(sections, metadata)
+
+	// Placeholders
+	if len(selected.Script.Placeholders) > 0 {
+		placeholdersSection := m.formatPreviewPlaceholders(selected.Script.Placeholders)
+		sections = append(sections, placeholdersSection)
+	}
+
+	// Description
+	if selected.Script.Description != "" {
+		descSection := m.formatPreviewDescription(selected.Script.Description, m.viewport.Width)
+		sections = append(sections, descSection)
+	}
+
+	// File content (if available)
+	if selected.Script.FilePath != "" {
+		fileSection := m.formatPreviewFileContent(selected.Script.FilePath, m.viewport.Width)
+		if fileSection != "" {
+			sections = append(sections, fileSection)
+		}
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
+// renderPreviewWithViewport renders the preview pane using viewport
+func (m Model) renderPreviewWithViewport(width, height int) string {
+	// Update viewport size
+	m.viewport.Width = width
+	m.viewport.Height = height
+
+	style := PreviewStyle.Width(width).Height(height)
+
+	// Highlight focused pane
+	if m.focusedPane == "preview" {
+		style = style.BorderForeground(primaryColor)
+	}
+
+	return style.Render(m.viewport.View())
 }
 
 // NavigationState represents different states in the add flow

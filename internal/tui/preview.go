@@ -47,11 +47,7 @@ func (m Model) formatPreviewContent(selected script.MatchResult, maxWidth int) s
 	metadata := m.formatPreviewMetadata(selected)
 	sections = append(sections, metadata)
 
-	// Command
-	if selected.Script.Command != "" {
-		commandSection := m.formatPreviewCommand(selected.Script.Command, maxWidth)
-		sections = append(sections, commandSection)
-	}
+	// Command section removed - no longer displayed
 
 	// Placeholders
 	if len(selected.Script.Placeholders) > 0 {
@@ -115,15 +111,11 @@ func (m Model) formatPreviewMetadata(selected script.MatchResult) string {
 	return PreviewContentStyle.Render(strings.Join(metadata, "\n"))
 }
 
-// formatPreviewCommand formats the script command
+// formatPreviewCommand formats the script command (DEPRECATED - Command section removed)
 func (m Model) formatPreviewCommand(command string, maxWidth int) string {
-	title := PreviewTitleStyle.Render("Command:")
-
-	// Wrap long commands
-	wrappedCommand := wrapText(command, maxWidth-2) // Account for padding
-	styledCommand := PreviewCommandStyle.Render(wrappedCommand)
-
-	return title + "\n" + styledCommand
+	// This function is deprecated and should not be used
+	// The Command: section has been removed from the preview
+	return ""
 }
 
 // formatPreviewPlaceholders formats the script placeholders
