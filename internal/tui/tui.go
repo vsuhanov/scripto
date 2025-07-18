@@ -79,6 +79,26 @@ func RunAddTUI() (AddTUIResult, error) {
 	return AddTUIResult{Cancelled: true}, nil
 }
 
+// RunFileEditTUI runs the TUI for editing a script loaded from a file
+func RunFileEditTUI(command, filePath, suggestedName string) (AddTUIResult, error) {
+	model := NewFileEditModel(command, filePath, suggestedName)
+	program := tea.NewProgram(model, tea.WithAltScreen())
+
+	finalModel, err := program.Run()
+	if err != nil {
+		return AddTUIResult{Cancelled: true}, fmt.Errorf("TUI error: %w", err)
+	}
+
+	// Extract result from final model
+	if m, ok := finalModel.(FileEditModel); ok {
+		return AddTUIResult{
+			Cancelled: m.cancelled,
+		}, nil
+	}
+
+	return AddTUIResult{Cancelled: true}, nil
+}
+
 // RunWithResult runs the TUI and returns the selected script or action
 func RunWithResult() (TUIResult, error) {
 	model := NewModel()

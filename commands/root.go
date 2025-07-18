@@ -189,7 +189,7 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 	}
 
 	// Use the shared function to store the script
-	if err := StoreScript(config, configPath, name, input, description, global); err != nil {
+	if err := StoreScript(config, configPath, name, input, description, global, ""); err != nil {
 		return err
 	}
 

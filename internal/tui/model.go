@@ -628,6 +628,23 @@ type AddModel struct {
 	statusMsg string
 }
 
+// FileEditModel represents a model for editing a script loaded from a file
+type FileEditModel struct {
+	// UI state
+	width  int
+	height int
+	ready  bool
+	// Pre-filled content
+	command        string
+	filePath       string
+	suggestedName  string
+	// Popup state
+	editPopup *EditPopup
+	// State tracking
+	cancelled bool
+	statusMsg string
+}
+
 // initHistoryPopupMsg signals to initialize the history popup
 type initHistoryPopupMsg struct{}
 
@@ -640,6 +657,16 @@ func NewAddModel() AddModel {
 		ready:         false,
 		currentState:  StateHistory,
 		previousState: StateNone,
+	}
+}
+
+// NewFileEditModel creates a new FileEditModel with pre-filled content
+func NewFileEditModel(command, filePath, suggestedName string) FileEditModel {
+	return FileEditModel{
+		ready:         false,
+		command:       command,
+		filePath:      filePath,
+		suggestedName: suggestedName,
 	}
 }
 
@@ -835,6 +862,98 @@ func (m AddModel) View() string {
 	if m.historyPopup != nil && m.historyPopup.active {
 		content = m.historyPopup.View()
 	} else if m.editPopup != nil && m.editPopup.active {
+		content = m.editPopup.View()
+	} else {
+		content = "No active popup"
+	}
+
+	// Add status message if any
+	if m.statusMsg != "" {
+		status := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Render(m.statusMsg)
+		content += "\n" + status
+	}
+
+	return content
+}
+
+// Init initializes the FileEditModel
+func (m FileEditModel) Init() tea.Cmd {
+	return func() tea.Msg {
+		return tea.WindowSizeMsg{Width: 80, Height: 24}
+	}
+}
+
+// Update handles FileEditModel events
+func (m FileEditModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.ready = true
+		
+		// Create a dummy script for the edit popup
+		dummyScript := script.MatchResult{
+			Script: storage.Script{
+				Name:        m.suggestedName,
+				Command:     m.command,
+				Description: "",
+				FilePath:    m.filePath,
+			},
+			Scope: "local",
+		}
+		
+		// Create and show edit popup immediately
+		popup := NewEditPopup(dummyScript, m.width, m.height)
+		m.editPopup = &popup
+		return m, nil
+
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "esc":
+			if m.editPopup != nil && m.editPopup.active {
+				// Close edit popup
+				m.editPopup.active = false
+				m.cancelled = true
+				return m, tea.Quit
+			}
+		}
+
+	case StatusMsg:
+		m.statusMsg = string(msg)
+		// If we got a success message, we're done
+		if strings.Contains(m.statusMsg, "successfully") {
+			return m, tea.Quit
+		}
+		return m, nil
+
+	case ErrorMsg:
+		m.statusMsg = fmt.Sprintf("Error: %v", msg)
+		return m, nil
+
+	default:
+		// Forward messages to edit popup
+		if m.editPopup != nil && m.editPopup.active {
+			updatedPopup, cmd := m.editPopup.Update(msg)
+			m.editPopup = &updatedPopup
+			return m, cmd
+		}
+	}
+
+	return m, nil
+}
+
+// View renders the FileEditModel
+func (m FileEditModel) View() string {
+	if !m.ready {
+		return "Loading..."
+	}
+
+	var content string
+
+	// Show edit popup
+	if m.editPopup != nil && m.editPopup.active {
 		content = m.editPopup.View()
 	} else {
 		content = "No active popup"
