@@ -7,9 +7,9 @@ import (
 )
 
 // GetCommandToExecute reads a script file and returns the appropriate command to execute
-// If the file starts with a shebang, returns the file path
+// If the file starts with a shebang, returns the file path with arguments appended
 // Otherwise, returns the file contents with placeholders processed
-func GetCommandToExecute(filePath string, placeholders map[string]string) (string, error) {
+func GetCommandToExecute(filePath string, placeholders map[string]string, args []string) (string, error) {
 	// Read the script file
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -20,8 +20,17 @@ func GetCommandToExecute(filePath string, placeholders map[string]string) (strin
 
 	// Check if file starts with shebang
 	if strings.HasPrefix(contentStr, "#!") {
-		// File has shebang, return the file path for direct execution
-		return filePath, nil
+		// File has shebang, return the file path with all arguments directly appended
+		command := filePath
+		for _, arg := range args {
+			// Quote arguments that contain spaces
+			if strings.Contains(arg, " ") && !strings.HasPrefix(arg, "\"") {
+				command += fmt.Sprintf(" \"%s\"", arg)
+			} else {
+				command += " " + arg
+			}
+		}
+		return command, nil
 	}
 
 	// File doesn't have shebang, process placeholders and return content

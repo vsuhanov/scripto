@@ -127,11 +127,10 @@ func (s *ScriptService) CreateEmptyScript() entities.Script {
 	}
 
 	return entities.Script{
-		Name:         "",
-		Description:  "",
-		FilePath:     "",
-		Scope:        scope,
-		Placeholders: []string{},
+		Name:        "",
+		Description: "",
+		FilePath:    "",
+		Scope:       scope,
 	}
 }
 

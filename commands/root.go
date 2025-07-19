@@ -39,7 +39,28 @@ Examples:
 
 			switch result.Action {
 			case tui.ActionExecute:
-				if err := executeCommand(result.ScriptPath); err != nil {
+				// Load configuration to find the script entity
+				configPath, err := storage.GetConfigPath()
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to get config path: %v\n", err)
+					os.Exit(1)
+				}
+
+				config, err := storage.ReadConfig(configPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to read config: %v\n", err)
+					os.Exit(1)
+				}
+
+				// Find the script in config by file path
+				matchResult, err := findScriptByFilePath(config, result.ScriptPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Failed to find script: %v\n", err)
+					os.Exit(1)
+				}
+
+				// Execute using the unified flow with no arguments
+				if err := executeFoundScript(matchResult, []string{}); err != nil {
 					fmt.Fprintf(os.Stderr, "Error executing script: %v\n", err)
 					os.Exit(1)
 				}
@@ -74,48 +95,153 @@ func executeScript(userArgs []string) error {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 
+	// Parse script name and arguments, handling -- separator
+	scriptName, scriptArgs := parseScriptNameAndArgs(userArgs)
+
 	// Create matcher and find best match
 	matcher := script.NewMatcher(config)
-	input := strings.Join(userArgs, " ")
-	matchResult, err := matcher.Match(input)
+	matchResult, err := matcher.Match(scriptName)
 	if err != nil {
 		return fmt.Errorf("failed to match script: %w", err)
 	}
 
 	switch matchResult.Type {
-	case script.ExactName:
-		return executeNamedScript(matchResult, userArgs[1:]) // Skip the script name
-	case script.PartialCommand:
-		return executePartialCommand(matchResult, userArgs)
+	case script.ExactName, script.PartialCommand:
+		return executeFoundScript(matchResult, scriptArgs)
 	case script.NoMatch:
-		return handleNoMatch(input, config, configPath)
+		// For no match, use the original full command for backward compatibility
+		fullInput := strings.Join(userArgs, " ")
+		return handleNoMatch(fullInput, config, configPath)
 	default:
 		return fmt.Errorf("unknown match type")
 	}
 }
 
-// executeNamedScript executes a script found by exact name match
-func executeNamedScript(matchResult *script.MatchResult, remainingArgs []string) error {
+// parseScriptNameAndArgs separates script name from arguments, handling -- separator
+func parseScriptNameAndArgs(userArgs []string) (string, []string) {
+	if len(userArgs) == 0 {
+		return "", []string{}
+	}
+
+	// Find the first -- separator
+	separatorIndex := -1
+	for i, arg := range userArgs {
+		if arg == "--" {
+			separatorIndex = i
+			break
+		}
+	}
+
+	if separatorIndex == -1 {
+		// No -- separator found, treat first argument as script name and rest as args
+		if len(userArgs) == 1 {
+			return userArgs[0], []string{}
+		}
+		return userArgs[0], userArgs[1:]
+	}
+
+	// -- separator found
+	if separatorIndex == 0 {
+		// -- is the first argument, no script name
+		return "", userArgs[1:]
+	}
+
+	// Script name is everything before --, args are everything after --
+	scriptNameParts := userArgs[:separatorIndex]
+	scriptArgs := userArgs[separatorIndex+1:]
+	
+	// Join script name parts with spaces (in case the script name itself has spaces)
+	scriptName := strings.Join(scriptNameParts, " ")
+	
+	return scriptName, scriptArgs
+}
+
+// findScriptByFilePath finds a script entity in the config by its file path
+func findScriptByFilePath(config storage.Config, filePath string) (*script.MatchResult, error) {
+	// Search through all scopes for a script with matching file path
+	for scope, scripts := range config {
+		for _, scriptEntity := range scripts {
+			if scriptEntity.FilePath == filePath {
+				// Create a match result for this script
+				matchResult := &script.MatchResult{
+					Type:       script.ExactName,
+					Script:     scriptEntity,
+					Confidence: 1.0,
+				}
+				// Ensure script has correct scope set
+				matchResult.Script.Scope = scope
+				return matchResult, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("script not found with file path: %s", filePath)
+}
+
+// executeFoundScript is the unified executor for all matched scripts
+func executeFoundScript(matchResult *script.MatchResult, scriptArgs []string) error {
+	// Check if script has a file path (stored as file) or is a command
+	if matchResult.Script.FilePath == "" {
+		return fmt.Errorf("script has no file path or command content")
+	}
+
+	// Read the script file to determine execution type
+	content, err := os.ReadFile(matchResult.Script.FilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read script file %s: %w", matchResult.Script.FilePath, err)
+	}
+
+	contentStr := string(content)
+	
+	// Check if this is an executable script (starts with shebang)
+	if strings.HasPrefix(contentStr, "#!") {
+		// Executable script - pass arguments directly, no placeholder processing
+		return executeExecutableScript(matchResult.Script.FilePath, scriptArgs)
+	}
+
+	// Shell command script - process placeholders
+	return executeShellCommandScript(matchResult, scriptArgs)
+}
+
+// executeExecutableScript handles scripts that start with shebang
+func executeExecutableScript(filePath string, args []string) error {
+	finalCommand := filePath
+	for _, arg := range args {
+		if strings.Contains(arg, " ") && !strings.HasPrefix(arg, "\"") {
+			finalCommand += fmt.Sprintf(" \"%s\"", arg)
+		} else {
+			finalCommand += " " + arg
+		}
+	}
+	return executeFinalCommand(finalCommand)
+}
+
+// executeShellCommandScript handles shell command scripts with placeholder processing
+func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []string) error {
 	processor := args.NewArgumentProcessor(matchResult.Script)
 
-	// Validate arguments
-	if err := processor.ValidateArguments(remainingArgs); err != nil {
+	// Validate arguments (only for shell command scripts)
+	if err := processor.ValidateArguments(scriptArgs); err != nil {
 		return err
 	}
 
 	// Process arguments
-	result, err := processor.ProcessArguments(remainingArgs)
+	result, err := processor.ProcessArguments(scriptArgs)
 	if err != nil {
 		return fmt.Errorf("failed to process arguments: %w", err)
 	}
 
-	// Handle missing arguments
+	// Handle missing arguments by prompting user
 	if len(result.MissingArgs) > 0 {
-		prompter := prompt.NewPlaceholderPrompter(prompt.NewConsolePrompter())
-		missingValues, err := prompter.PromptForMissingPlaceholders(result.MissingArgs)
+		formResult, err := tui.RunPlaceholderForm(result.MissingArgs)
 		if err != nil {
-			return fmt.Errorf("failed to prompt for missing arguments: %w", err)
+			return fmt.Errorf("failed to collect placeholder values: %w", err)
 		}
+		
+		if formResult.Cancelled {
+			return fmt.Errorf("operation cancelled by user")
+		}
+		
+		missingValues := formResult.Values
 
 		// Update result with prompted values
 		for name, value := range missingValues {
@@ -126,53 +252,19 @@ func executeNamedScript(matchResult *script.MatchResult, remainingArgs []string)
 			}
 		}
 
-		// Regenerate final command
-		processor := args.NewArgumentProcessor(matchResult.Script)
-		newResult, err := processor.ProcessArguments(append(remainingArgs, convertToArgs(missingValues)...))
+		// Regenerate final command with all placeholders resolved
+		newProcessor := args.NewArgumentProcessor(matchResult.Script)
+		newResult, err := newProcessor.ProcessArguments(append(scriptArgs, convertToArgs(missingValues)...))
 		if err != nil {
 			return err
 		}
 		result.FinalCommand = newResult.FinalCommand
 	}
 
-	// Execute the command
-	return executeScriptFile(matchResult, result.FinalCommand)
+	// Execute the final command
+	return executeFinalCommand(result.FinalCommand)
 }
 
-// executePartialCommand executes a script found by partial command match
-func executePartialCommand(matchResult *script.MatchResult, userArgs []string) error {
-	processor := args.NewArgumentProcessor(matchResult.Script)
-	result, err := processor.ProcessArguments([]string{}) // No args provided yet
-	if err != nil {
-		return err
-	}
-
-	// If the script has placeholders, prompt for them
-	if len(result.MissingArgs) > 0 {
-		prompter := prompt.NewPlaceholderPrompter(prompt.NewConsolePrompter())
-		missingValues, err := prompter.PromptForMissingPlaceholders(result.MissingArgs)
-		if err != nil {
-			return fmt.Errorf("failed to prompt for missing arguments: %w", err)
-		}
-
-		// Create final command with substituted values
-		finalArgs := convertToArgs(missingValues)
-		newResult, err := processor.ProcessArguments(finalArgs)
-		if err != nil {
-			return err
-		}
-		result.FinalCommand = newResult.FinalCommand
-	} else {
-		// Command field removed - use FilePath instead
-		if matchResult.Script.FilePath != "" {
-			result.FinalCommand = matchResult.Script.FilePath
-		} else {
-			return fmt.Errorf("script has no file path")
-		}
-	}
-
-	return executeScriptFile(matchResult, result.FinalCommand)
-}
 
 // handleNoMatch handles the case when no script matches
 func handleNoMatch(input string, config storage.Config, configPath string) error {
@@ -237,10 +329,16 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 			return err
 		}
 
-		missingValues, err := prompter.PromptForMissingPlaceholders(result.MissingArgs)
+		formResult, err := tui.RunPlaceholderForm(result.MissingArgs)
 		if err != nil {
-			return fmt.Errorf("failed to prompt for missing arguments: %w", err)
+			return fmt.Errorf("failed to collect placeholder values: %w", err)
 		}
+		
+		if formResult.Cancelled {
+			return fmt.Errorf("operation cancelled by user")
+		}
+		
+		missingValues := formResult.Values
 
 		// Substitute placeholders
 		finalCommand := input
@@ -262,10 +360,10 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 			}
 		}
 
-		return executeCommand(finalCommand)
+		return executeFinalCommand(finalCommand)
 	}
 
-	return executeCommand(input)
+	return executeFinalCommand(input)
 }
 
 // convertToArgs converts a map of values to argument format
@@ -277,16 +375,6 @@ func convertToArgs(values map[string]string) []string {
 	return arguments
 }
 
-// executeScriptFile executes a script, preferring file path if available
-func executeScriptFile(matchResult *script.MatchResult, finalCommand string) error {
-	// If the script has a file path, use that for execution
-	if matchResult.Script.FilePath != "" {
-		return executeCommand(matchResult.Script.FilePath)
-	}
-
-	// Fallback to direct command execution for scripts without file paths
-	return executeCommand(finalCommand)
-}
 
 // writeScriptPathForEditor writes the script path for editor use
 func writeScriptPathForEditor(scriptPath string) error {
@@ -301,22 +389,17 @@ func writeScriptPathForEditor(scriptPath string) error {
 }
 
 // executeCommand executes a script file with placeholder processing
-func executeCommand(scriptPath string) error {
-	return executeCommandWithPlaceholders(scriptPath, make(map[string]string))
+func executeCommand(finalCommand string) error {
+	return executeFinalCommand(finalCommand)
 }
 
-// executeCommandWithPlaceholders executes a script file with the given placeholders
-func executeCommandWithPlaceholders(scriptPath string, placeholders map[string]string) error {
-	commandToExecute, err := execution.GetCommandToExecute(scriptPath, placeholders)
-	if err != nil {
-		return fmt.Errorf("failed to prepare command: %w", err)
-	}
-
+// executeFinalCommand executes a script file with the given placeholders
+func executeFinalCommand(finalCommand string) error {
 	// Check if we have a custom file descriptor for command output
 	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
 	if cmdFdPath != "" {
 		// Write command to custom descriptor file
-		err := os.WriteFile(cmdFdPath, []byte(commandToExecute), 0600)
+		err := os.WriteFile(cmdFdPath, []byte(finalCommand), 0600)
 		if err != nil {
 			return fmt.Errorf("failed to write command to descriptor: %w", err)
 		}
@@ -324,7 +407,7 @@ func executeCommandWithPlaceholders(scriptPath string, placeholders map[string]s
 	}
 
 	// Fallback to stdout for backward compatibility
-	fmt.Print(commandToExecute)
+	fmt.Print(finalCommand)
 	return nil
 }
 

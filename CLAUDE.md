@@ -114,6 +114,11 @@ Each Script object contains:
 - `github.com/inconshreveable/mousetrap` - Windows console handling (cobra dependency)
 - Various charmbracelet ecosystem packages for terminal handling
 
+## Logging
+
+- **Logging Strategy**: Use log package for log output
+- **Log File Location**: `/tmp/scripto.log` - Standard log file for application logs
+
 ## Testing Guidelines
 
 - **CRITICAL**: For all testing via terminal commands YOU MUST provide SCRIPTO_CONFIG environment variable with path to a local scripto.json file YOU MUST NEVER touch the production ~/.scripto/* directory

@@ -212,15 +212,11 @@ func (e ScriptEditor) GetResult() ScriptEditorResult {
 	command := e.commandTextarea.Value()
 	scope := e.scopeInput.Value()
 
-	// Parse placeholders from command
-	placeholders := ParsePlaceholders(command)
-
 	script := entities.Script{
-		Name:         name,
-		Description:  description,
-		FilePath:     e.originalScript.FilePath,
-		Scope:        scope,
-		Placeholders: placeholders,
+		Name:        name,
+		Description: description,
+		FilePath:    e.originalScript.FilePath,
+		Scope:       scope,
 	}
 
 	return ScriptEditorResult{

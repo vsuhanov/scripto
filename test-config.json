@@ -12,6 +12,12 @@
   ],
   "global": [
     {
+      "name": "claude-new-command",
+      "description": "",
+      "file_path": "/tmp/test-script.sh",
+      "scope": "global"
+    },
+    {
       "name": "test-script",
       "command": "echo 'Hello World'",
       "placeholders": [],
