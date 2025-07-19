@@ -10,7 +10,7 @@ import (
 )
 
 func (m MainModel) formatPreviewTitle(selected script.MatchResult) string {
-	scopeIndicator := FormatScopeIndicator(selected.Scope)
+	scopeIndicator := FormatScopeIndicator(selected.Script.Scope)
 
 	var title string
 	if selected.Script.Name != "" {
@@ -26,12 +26,16 @@ func (m MainModel) formatPreviewTitle(selected script.MatchResult) string {
 func (m MainModel) formatPreviewMetadata(selected script.MatchResult) string {
 	var metadata []string
 
-	// Scope
-	metadata = append(metadata, fmt.Sprintf("Scope: %s", selected.Scope))
-
-	// Directory (for non-global scripts)
-	if selected.Scope != "global" {
-		dir := selected.Directory
+	// Scope display
+	if selected.Script.Scope == "global" {
+		metadata = append(metadata, "Scope: global")
+	} else {
+		// Show both scope label and directory path
+		scopeLabel := m.getScopeDisplayName(selected.Script.Scope)
+		metadata = append(metadata, fmt.Sprintf("Scope: %s", scopeLabel))
+		
+		// Show directory path if it's long
+		dir := selected.Script.Scope
 		if len(dir) > 50 {
 			dir = "..." + dir[len(dir)-47:]
 		}

@@ -7,8 +7,10 @@ import (
 
 	"scripto/entities"
 	"scripto/internal/args"
+	"scripto/internal/execution"
 	"scripto/internal/prompt"
 	"scripto/internal/script"
+	"scripto/internal/services"
 	"scripto/internal/storage"
 	"scripto/internal/tui"
 
@@ -37,15 +39,12 @@ Examples:
 
 			switch result.Action {
 			case tui.ActionExecute:
-				// Execute the selected script
 				if err := executeCommand(result.ScriptPath); err != nil {
 					fmt.Fprintf(os.Stderr, "Error executing script: %v\n", err)
 					os.Exit(1)
 				}
 			case tui.ActionEdit:
-				// Write script path for editor and exit with special code
-        // refactor: call a different method that is going to write the scriptPath to the file, executeCommand will be reserved for cases when we need to execute the command
-				if err := executeCommand(result.ScriptPath); err != nil {
+				if err := writeScriptPathForEditor(result.ScriptPath); err != nil {
 					fmt.Fprintf(os.Stderr, "Error writing script path: %v\n", err)
 					os.Exit(1)
 				}
@@ -195,8 +194,25 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 		return fmt.Errorf("failed to prompt for scope: %w", err)
 	}
 
-	// Use the shared function to store the script
-	if err := StoreScript(config, configPath, name, input, description, global, ""); err != nil {
+	// Use the service layer to store the script
+	service, err := services.NewScriptService()
+	if err != nil {
+		return fmt.Errorf("failed to create script service: %w", err)
+	}
+
+	// Create script with scope
+	scope := "global"
+	if !global {
+		scope, _ = os.Getwd()
+	}
+
+	script := entities.Script{
+		Name:        name,
+		Description: description,
+		Scope:       scope,
+	}
+
+	if err := service.SaveScript(script, input, nil); err != nil {
 		return err
 	}
 
@@ -272,15 +288,35 @@ func executeScriptFile(matchResult *script.MatchResult, finalCommand string) err
 	return executeCommand(finalCommand)
 }
 
-// executeCommand outputs the command for shell function to evaluate
-// refactor: this method needs to read the scriptPath (passed as command - parameter should be renamed), This method should read the contents of the file, if it starts with a shebang, then it needs to write the file name to the file (but better to call a method that is going to construct a script for shebang case). * if the file does not start with a shebang - write the contents of the file to the cmdFdPath so it's executed. It will need to process the placeholders, this method better receive a map of placeholders values, also need to extract a method that performs the logic and returns the command to execute, it should be moved to a different module and called here so this is a simple wrapper that calls a `GetCommandToExecute(filePath, placeholders)` and writes the response to cmdFdPath file. This other method may be used by something else potentially.
+// writeScriptPathForEditor writes the script path for editor use
+func writeScriptPathForEditor(scriptPath string) error {
+	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
+	if cmdFdPath != "" {
+		return execution.WriteScriptPathToFile(scriptPath, cmdFdPath)
+	}
 
-func executeCommand(command string) error {
+	// Fallback to stdout for backward compatibility
+	fmt.Print(scriptPath)
+	return nil
+}
+
+// executeCommand executes a script file with placeholder processing
+func executeCommand(scriptPath string) error {
+	return executeCommandWithPlaceholders(scriptPath, make(map[string]string))
+}
+
+// executeCommandWithPlaceholders executes a script file with the given placeholders
+func executeCommandWithPlaceholders(scriptPath string, placeholders map[string]string) error {
+	commandToExecute, err := execution.GetCommandToExecute(scriptPath, placeholders)
+	if err != nil {
+		return fmt.Errorf("failed to prepare command: %w", err)
+	}
+
 	// Check if we have a custom file descriptor for command output
 	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
 	if cmdFdPath != "" {
 		// Write command to custom descriptor file
-		err := os.WriteFile(cmdFdPath, []byte(command), 0600)
+		err := os.WriteFile(cmdFdPath, []byte(commandToExecute), 0600)
 		if err != nil {
 			return fmt.Errorf("failed to write command to descriptor: %w", err)
 		}
@@ -288,7 +324,7 @@ func executeCommand(command string) error {
 	}
 
 	// Fallback to stdout for backward compatibility
-	fmt.Print(command)
+	fmt.Print(commandToExecute)
 	return nil
 }
 
@@ -314,7 +350,7 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 				// name = strings.TrimPrefix(name, toComplete)
 			}
 
-			suggestions = append(suggestions, result.Directory+separator+name+separator+description)
+			suggestions = append(suggestions, result.Script.Scope+separator+name+separator+description)
 		} else {
 			// Unnamed script - show command, use scope as group name
 			command := result.Script.FilePath
@@ -338,7 +374,7 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 				// }
 			}
 
-			suggestions = append(suggestions, result.Directory+separator+displayCommand+separator+result.Script.FilePath)
+			suggestions = append(suggestions, result.Script.Scope+separator+displayCommand+separator+result.Script.FilePath)
 		}
 	}
 	return suggestions

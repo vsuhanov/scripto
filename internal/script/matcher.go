@@ -23,8 +23,6 @@ const (
 type MatchResult struct {
 	Type       MatchType
 	Script     entities.Script
-	Directory  string // Directory where script was found
-	Scope      string // "local", "parent", "global"
 	Confidence float64
 }
 
@@ -54,10 +52,10 @@ func (m *ScriptMatcher) FindAllScripts() ([]MatchResult, error) {
 	// 1. Local scripts (current directory)
 	if scripts, exists := m.config[cwd]; exists {
 		for _, script := range scripts {
+			// Ensure script has correct scope set
+			script.Scope = cwd
 			results = append(results, MatchResult{
-				Script:    script,
-				Directory: cwd,
-				Scope:     "local",
+				Script: script,
 			})
 		}
 		seen[cwd] = true
@@ -74,10 +72,10 @@ func (m *ScriptMatcher) FindAllScripts() ([]MatchResult, error) {
 		if !seen[parent] {
 			if scripts, exists := m.config[parent]; exists {
 				for _, script := range scripts {
+					// Ensure script has correct scope set
+					script.Scope = parent
 					results = append(results, MatchResult{
-						Script:    script,
-						Directory: parent,
-						Scope:     "parent",
+						Script: script,
 					})
 				}
 			}
@@ -90,10 +88,10 @@ func (m *ScriptMatcher) FindAllScripts() ([]MatchResult, error) {
 	// 3. Global scripts
 	if scripts, exists := m.config["global"]; exists {
 		for _, script := range scripts {
+			// Ensure script has correct scope set
+			script.Scope = "global"
 			results = append(results, MatchResult{
-				Script:    script,
-				Directory: "global",
-				Scope:     "global",
+				Script: script,
 			})
 		}
 	}
@@ -125,7 +123,7 @@ func (m *ScriptMatcher) Match(input string) (*MatchResult, error) {
 		if candidates[i].Confidence != candidates[j].Confidence {
 			return candidates[i].Confidence > candidates[j].Confidence
 		}
-		return getScopePriority(candidates[i].Scope) < getScopePriority(candidates[j].Scope)
+		return getScopePriority(candidates[i].Script.Scope) < getScopePriority(candidates[j].Script.Scope)
 	})
 
 	if len(candidates) > 0 {
@@ -161,7 +159,7 @@ func (m *ScriptMatcher) FilterByKeyword(keyword string) ([]MatchResult, error) {
 		if filtered[i].Confidence != filtered[j].Confidence {
 			return filtered[i].Confidence > filtered[j].Confidence
 		}
-		return getScopePriority(filtered[i].Scope) < getScopePriority(filtered[j].Scope)
+		return getScopePriority(filtered[i].Script.Scope) < getScopePriority(filtered[j].Script.Scope)
 	})
 
 	return filtered, nil
@@ -212,16 +210,26 @@ func calculateKeywordConfidence(keyword string, script entities.Script) float64 
 
 // getScopePriority returns the priority order for script scopes
 func getScopePriority(scope string) int {
-	switch scope {
-	case "local":
-		return 0
-	case "parent":
-		return 1
-	case "global":
+	if scope == "global" {
 		return 2
-	default:
-		return 3
 	}
+	
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return 3 // Unknown priority if we can't get cwd
+	}
+	
+	if scope == cwd {
+		return 0 // Local (current directory)
+	}
+	
+	// Check if it's a parent directory
+	if strings.HasPrefix(cwd, scope+string(filepath.Separator)) {
+		return 1 // Parent directory
+	}
+	
+	return 3 // Other directory
 }
 
 // max returns the larger of two float64 values

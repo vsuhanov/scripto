@@ -2,8 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"io/ioutil"
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -11,16 +9,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"scripto/internal/script"
+	"scripto/internal/services"
 	"scripto/internal/storage"
 )
 
 // MainModel represents the main TUI state
 type MainModel struct {
 	// Core data
-	scripts     []script.MatchResult
-	selectedIdx int
-	config      storage.Config
-	configPath  string
+	scripts       []script.MatchResult
+	selectedIdx   int
+	config        storage.Config
+	configPath    string
+	scriptService *services.ScriptService
 
 	// UI state
 	width  int
@@ -41,9 +41,6 @@ type MainModel struct {
 	statusMsg     string
 	quitting      bool
 
-	// Edit popup
-	editPopup *EditPopup
-
 	// Viewport for preview
 	viewport viewport.Model
 }
@@ -59,10 +56,12 @@ type (
 
 // NewModel creates a new TUI model
 func NewModel() MainModel {
+	scriptService, _ := services.NewScriptService()
 	return MainModel{
-		focusedPane: "list",
-		ready:       false,
-		viewport:    viewport.New(0, 0),
+		focusedPane:   "list",
+		ready:         false,
+		viewport:      viewport.New(0, 0),
+		scriptService: scriptService,
 	}
 }
 
@@ -117,22 +116,6 @@ func (m MainModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKeyMsg handles keyboard input
 func (m MainModel) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle edit popup events first
-	if m.editPopup != nil && m.editPopup.active {
-		updatedPopup, cmd := m.editPopup.Update(msg)
-		m.editPopup = &updatedPopup
-
-		// Check if popup was closed
-		if !m.editPopup.active {
-			m.editPopup = nil
-			// If there's a command (like save), execute it and reload scripts
-			if cmd != nil {
-				return m, tea.Sequence(cmd, loadScripts())
-			}
-		}
-
-		return m, cmd
-	}
 
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -245,10 +228,26 @@ func (m MainModel) handleInlineEdit() (tea.Model, tea.Cmd) {
 
 	selected := m.scripts[m.selectedIdx]
 
-	popup := NewEditPopup(selected, m.width, m.height)
-	m.editPopup = &popup
+	// Run the script editor
+	return m, func() tea.Msg {
+		result, err := RunScriptEditor(selected.Script, false)
+		if err != nil {
+			return ErrorMsg(err)
+		}
 
-	return m, nil
+		if !result.Cancelled {
+			// Save the updated script
+			if m.scriptService != nil {
+				err := m.scriptService.SaveScript(result.Script, result.Command, &selected.Script)
+				if err != nil {
+					return ErrorMsg(err)
+				}
+			}
+			return StatusMsg("Script updated successfully")
+		}
+
+		return StatusMsg("Edit cancelled")
+	}
 }
 
 func (m MainModel) handleExternalEdit() (tea.Model, tea.Cmd) {
@@ -324,60 +323,16 @@ func (m MainModel) performDelete() (tea.Model, tea.Cmd) {
 
 	selected := m.scripts[m.selectedIdx]
 
-	// Load current config
-	configPath, err := storage.GetConfigPath()
-	if err != nil {
-		m.statusMsg = fmt.Sprintf("Error getting config path: %v", err)
-		return m, nil
-	}
-
-	config, err := storage.ReadConfig(configPath)
-	if err != nil {
-		m.statusMsg = fmt.Sprintf("Error reading config: %v", err)
-		return m, nil
-	}
-
-	// Find and remove the script from config
-	key := selected.Directory
-	if key == "global" {
-		key = "global"
-	}
-
-	if scripts, exists := config[key]; exists {
-		// Find the script in the array
-		for i, script := range scripts {
-			if script.Name == selected.Script.Name &&
-				script.FilePath == selected.Script.FilePath {
-				// Remove the script from the array
-				config[key] = append(scripts[:i], scripts[i+1:]...)
-
-				// If the directory has no more scripts, remove the key
-				if len(config[key]) == 0 {
-					delete(config, key)
-				}
-				break
-			}
+	// Use script service to delete
+	if m.scriptService != nil {
+		if err := m.scriptService.DeleteScript(selected.Script); err != nil {
+			m.statusMsg = fmt.Sprintf("Error deleting script: %v", err)
+			return m, nil
 		}
 	}
 
-	// Save the updated config
-	if err := storage.WriteConfig(configPath, config); err != nil {
-		m.statusMsg = fmt.Sprintf("Error saving config: %v", err)
-		return m, nil
-	}
-
-	// Remove script file if it exists
-	if selected.Script.FilePath != "" {
-		if err := os.Remove(selected.Script.FilePath); err != nil {
-			// Don't fail if file doesn't exist, just warn
-			m.statusMsg = fmt.Sprintf("Script deleted from config, but file removal failed: %v", err)
-		} else {
-			m.statusMsg = "Script deleted successfully"
-		}
-	} else {
-		m.statusMsg = "Script deleted successfully"
-	}
-
+	m.statusMsg = "Script deleted successfully"
+	
 	// Reload scripts
 	return m, loadScripts()
 }
@@ -394,11 +349,6 @@ func (m MainModel) View() string {
 
 	if m.showHelp {
 		return m.renderHelp()
-	}
-
-	// Render edit popup if active
-	if m.editPopup != nil && m.editPopup.active {
-		return m.renderWithPopup()
 	}
 
 	// Calculate dimensions for two-pane layout
@@ -453,20 +403,6 @@ func (m MainModel) renderStatusBar() string {
 	return StatusStyle.Width(m.width).Render(status)
 }
 
-// renderWithPopup renders the main view with edit popup overlay
-func (m MainModel) renderWithPopup() string {
-	// Render popup
-	popup := m.editPopup.View()
-
-	// Overlay popup centered on screen
-	return lipgloss.Place(
-		m.width, m.height,
-		lipgloss.Center, lipgloss.Center,
-		popup,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceForeground(lipgloss.Color("#40444b")),
-	)
-}
 
 // renderHelp renders the help screen
 func (m MainModel) renderHelp() string {
@@ -524,6 +460,14 @@ func loadScripts() tea.Cmd {
 
 		return ScriptsLoadedMsg(scripts)
 	}
+}
+
+// getScopeDisplayName returns a user-friendly display name for a scope
+func (m MainModel) getScopeDisplayName(scope string) string {
+	if m.scriptService != nil {
+		return m.scriptService.GetScopeDisplayName(scope)
+	}
+	return scope
 }
 
 // updateViewportContent updates the viewport content with current script info

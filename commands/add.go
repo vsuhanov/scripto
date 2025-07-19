@@ -8,8 +8,7 @@ import (
 	"regexp"
 	"strings"
 
-	"scripto/entities"
-	"scripto/internal/storage"
+	"scripto/internal/services"
 	"scripto/internal/tui"
 
 	"github.com/spf13/cobra"
@@ -24,10 +23,10 @@ You can also add a script from an existing file using the --file flag:
   scripto add --file /path/to/script.sh --name "deploy"`,
 	Args:  cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Get file flag
 		filePath := cmd.Flag("file").Value.String()
 
 		// Check if both file and command arguments are provided
+		// When --file is specified, it provides the script content, but other flags like --name, --global are still valid
 		if filePath != "" && len(args) > 0 {
 			fmt.Printf("Error: Cannot specify both --file and command arguments\n")
 			os.Exit(1)
@@ -35,43 +34,40 @@ You can also add a script from an existing file using the --file flag:
 
 		// Check if we have any command arguments or file
 		if len(args) == 0 && filePath == "" {
-			// No arguments - launch TUI for command selection
-			if err := launchAddTUI(); err != nil {
+			// No arguments - show history popup first, then launch ScriptEditor
+			historyResult, err := tui.RunHistoryPopup()
+			if err != nil {
+				fmt.Printf("Error running history popup: %v\n", err)
+				os.Exit(1)
+			}
+			
+			if historyResult.Cancelled {
+				return
+			}
+			
+			// Launch ScriptEditor with selected command from history
+			if err := launchScriptEditor(historyResult.Command, "", cmd); err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
 			}
 			return
 		}
 
-		configPath, err := storage.GetConfigPath()
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-
-		config, err := storage.ReadConfig(configPath)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
 
 		var command string
 		var sourceFilePath string
 
 		if filePath != "" {
 			// Read command from file
-			var suggestedName string
-			command, sourceFilePath, suggestedName, err = readCommandFromFile(filePath)
+			var err error
+			command, sourceFilePath, _, err = readCommandFromFile(filePath)
 			if err != nil {
 				fmt.Printf("Error reading file: %v\n", err)
 				os.Exit(1)
 			}
 
-			// Get global flag
-			isGlobal := cmd.Flag("global").Changed
-			
-			// Launch TUI with pre-filled content
-			if err := launchFileEditTUI(command, sourceFilePath, suggestedName, isGlobal); err != nil {
+			// Launch ScriptEditor with pre-filled content
+			if err := launchScriptEditor(command, sourceFilePath, cmd); err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -81,25 +77,10 @@ You can also add a script from an existing file using the --file flag:
 			command = strings.Join(args, " ")
 		}
 
-		// Get script name from flag (optional)
-		scriptName := cmd.Flag("name").Value.String()
-
-		// Get description from flag
-		description := cmd.Flag("description").Value.String()
-
-		// Get global flag
-		isGlobal := cmd.Flag("global").Changed
-
-		// Use the shared function to store the script
-		if err := StoreScript(config, configPath, scriptName, command, description, isGlobal, ""); err != nil {
+		// Launch ScriptEditor with the command arguments
+		if err := launchScriptEditor(command, "", cmd); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
-		}
-
-		if scriptName != "" {
-			fmt.Printf("Added script '%s'\n", scriptName)
-		} else {
-			fmt.Printf("Added script: %s\n", command)
 		}
 
 	},
@@ -122,6 +103,15 @@ func ParsePlaceholders(command string) []string {
 
 // readCommandFromFile reads a command from a file and returns the command content, absolute file path, and suggested name
 func readCommandFromFile(filePath string) (string, string, string, error) {
+	// Expand tilde to home directory if present
+	if strings.HasPrefix(filePath, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		filePath = filepath.Join(homeDir, filePath[2:])
+	}
+	
 	// Convert to absolute path
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
@@ -158,90 +148,68 @@ func readCommandFromFile(filePath string) (string, string, string, error) {
 	return command, absPath, suggestedName, nil
 }
 
-// StoreScript stores a script with the given parameters, checking for duplicates
-func StoreScript(config storage.Config, configPath string, name, command, description string, isGlobal bool, sourceFilePath string) error {
-	// Parse placeholders from command
-	// placeholders := ParsePlaceholders(command)
 
-	var filePath string
-	var err error
+// launchScriptEditor launches the ScriptEditor for adding a new script
+func launchScriptEditor(command, filePath string, cmd *cobra.Command) error {
+	// Create script service
+	service, err := services.NewScriptService()
+	if err != nil {
+		return fmt.Errorf("failed to create script service: %w", err)
+	}
 
-	// If source file path is provided, use it; otherwise create a new file
-	if sourceFilePath != "" {
-		filePath = sourceFilePath
+	// Create new script with defaults
+	script := service.CreateEmptyScript()
+
+	// Apply command-line values
+	if name := cmd.Flag("name").Value.String(); name != "" {
+		script.Name = name
+	}
+	if desc := cmd.Flag("description").Value.String(); desc != "" {
+		script.Description = desc
+	}
+	// Set scope based on global flag
+	if cmd.Flag("global").Changed {
+		script.Scope = "global"
 	} else {
-		// Save script to file
-		filePath, err = storage.SaveScriptToFile(name, command)
+		// Use current directory scope if not global
+		script.Scope = service.GetCurrentDirectoryScope()
+	}
+
+	if filePath != "" {
+		script.FilePath = filePath
+	}
+
+	// If we have a command but no file, create a temporary file for editing
+	if command != "" && filePath == "" {
+		// Create a temporary script file for the command
+		tempFilePath, err := service.CreateTempScriptFile(command)
 		if err != nil {
-			return fmt.Errorf("failed to save script to file: %w", err)
+			return fmt.Errorf("failed to create temp script file: %w", err)
 		}
+		script.FilePath = tempFilePath
 	}
 
-	script := entities.Script{
-		Name:         name,
-		// Placeholders: placeholders,
-		Description:  description,
-		FilePath:     filePath,
+	// Run the script editor
+	result, err := tui.RunScriptEditor(script, true)
+	if err != nil {
+		return fmt.Errorf("TUI error: %w", err)
 	}
 
-	// Determine scope
-	key := "global"
-	if !isGlobal {
-		wd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("failed to get working directory: %w", err)
-		}
-		key = wd
+	if result.Cancelled {
+		return nil
 	}
 
-	// Check if script with same name already exists in this scope
-	if name != "" {
-		for _, existingScript := range config[key] {
-			if existingScript.Name == name {
-				return fmt.Errorf("script with name '%s' already exists in this scope", name)
-			}
-		}
+	// Use provided command or command from editor
+	finalCommand := command
+	if finalCommand == "" {
+		finalCommand = result.Command
 	}
 
-	// Add script to config
-	config[key] = append(config[key], script)
-
-	// Save configuration
-	if err := storage.WriteConfig(configPath, config); err != nil {
+	// Save the script using the service
+	if err := service.SaveScript(result.Script, finalCommand, nil); err != nil {
 		return fmt.Errorf("failed to save script: %w", err)
 	}
 
-	return nil
-}
-
-// launchAddTUI launches the TUI for adding a new script with command history selection
-func launchAddTUI() error {
-	result, err := tui.RunAddTUI()
-	if err != nil {
-		return fmt.Errorf("TUI error: %w", err)
-	}
-
-	if result.Cancelled {
-		return nil
-	}
-
-	// Script was added successfully via TUI
-	fmt.Printf("Script added successfully\n")
-	return nil
-}
-
-// launchFileEditTUI launches the TUI for editing a script loaded from a file
-func launchFileEditTUI(command, filePath, suggestedName string, isGlobal bool) error {
-	result, err := tui.RunFileEditTUI(command, filePath, suggestedName, isGlobal)
-	if err != nil {
-		return fmt.Errorf("TUI error: %w", err)
-	}
-
-	if result.Cancelled {
-		return nil
-	}
-
-	// Script was added successfully via TUI
 	fmt.Printf("Script added successfully\n")
 	return nil
 }

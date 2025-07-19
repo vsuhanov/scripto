@@ -18,19 +18,17 @@ func (m MainModel) renderList(width, height int) string {
 
 	var items []string
 	var currentScope string
-	var currentDirectory string
 
 	for i, script := range m.scripts {
-		// Add scope header if scope or directory changes
-		if script.Scope != currentScope || script.Directory != currentDirectory {
+		// Add scope header if scope changes
+		if script.Script.Scope != currentScope {
 			if currentScope != "" {
 				items = append(items, "") // Add spacing between scopes
 			}
 
-			scopeHeader := formatScopeHeader(script.Scope, script.Directory)
+			scopeHeader := formatScopeHeader(script.Script.Scope)
 			items = append(items, scopeHeader)
-			currentScope = script.Scope
-			currentDirectory = script.Directory
+			currentScope = script.Script.Scope
 		}
 
 		// Format script item
@@ -67,7 +65,7 @@ func (m MainModel) formatScriptItem(script script.MatchResult, index int) string
 	var parts []string
 
 	// Add scope indicator
-	scopeIndicator := FormatScopeIndicator(script.Scope)
+	scopeIndicator := FormatScopeIndicator(script.Script.Scope)
 	parts = append(parts, scopeIndicator)
 
 	// Add script name or command
@@ -92,19 +90,20 @@ func (m MainModel) formatScriptItem(script script.MatchResult, index int) string
 }
 
 // formatScopeHeader formats a scope section header with directory name
-func formatScopeHeader(scope, directory string) string {
+func formatScopeHeader(scope string) string {
 	var header string
-	style := GetScopeStyle(scope)
+	scopeType := getScopeType(scope)
+	style := GetScopeStyle(scopeType)
 
-	switch scope {
+	switch scopeType {
 	case "local":
-		header = "● " + formatDirectoryName(directory)
+		header = "● " + formatDirectoryName(scope)
 	case "parent":
-		header = "◐ " + formatDirectoryName(directory)
+		header = "◐ " + formatDirectoryName(scope)
 	case "global":
 		header = "○ Global Scripts"
 	default:
-		header = formatDirectoryName(directory)
+		header = formatDirectoryName(scope)
 	}
 
 	return style.Bold(true).Render(header)
@@ -162,7 +161,7 @@ func (m MainModel) findSelectedLine(lines []string) int {
 	// Count scope headers and estimate position
 	scopeHeaders := 0
 	for i := 0; i <= m.selectedIdx && i < len(m.scripts); i++ {
-		if i == 0 || m.scripts[i].Scope != m.scripts[i-1].Scope {
+		if i == 0 || m.scripts[i].Script.Scope != m.scripts[i-1].Script.Scope {
 			scopeHeaders++
 		}
 	}

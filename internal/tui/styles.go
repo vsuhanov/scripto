@@ -1,6 +1,10 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -163,8 +167,9 @@ func GetScopeStyle(scope string) lipgloss.Style {
 
 // FormatScopeIndicator returns a styled scope indicator
 func FormatScopeIndicator(scope string) string {
-	style := GetScopeStyle(scope)
-	switch scope {
+	scopeType := getScopeType(scope)
+	style := GetScopeStyle(scopeType)
+	switch scopeType {
 	case "local":
 		return style.Render("●")
 	case "parent":
@@ -174,4 +179,28 @@ func FormatScopeIndicator(scope string) string {
 	default:
 		return "●"
 	}
+}
+
+// getScopeType determines the scope type from a scope path
+func getScopeType(scope string) string {
+	if scope == "global" {
+		return "global"
+	}
+	
+	// Get current working directory to determine if it's local or parent
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "other"
+	}
+	
+	if scope == cwd {
+		return "local"
+	}
+	
+	// Check if it's a parent directory
+	if strings.HasPrefix(cwd, scope+string(filepath.Separator)) {
+		return "parent"
+	}
+	
+	return "other"
 }

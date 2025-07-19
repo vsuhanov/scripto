@@ -65,6 +65,7 @@ type HistoryPopup struct {
 	width        int
 	height       int
 	errorMessage string
+	result       HistoryPopupResult
 }
 
 // NewHistoryPopup creates a new history popup
@@ -159,8 +160,20 @@ type HistorySelectedMsg struct {
 	command string
 }
 
-// Update handles popup events
-func (h HistoryPopup) Update(msg tea.Msg) (HistoryPopup, tea.Cmd) {
+// HistoryPopupResult represents the result of running the history popup
+type HistoryPopupResult struct {
+	Command   string
+	Cancelled bool
+}
+
+// Init initializes the history popup
+func (h HistoryPopup) Init() tea.Cmd {
+	_, cmd := h.LoadHistory()
+	return cmd
+}
+
+// Update handles popup events and implements tea.Model
+func (h HistoryPopup) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !h.active {
 		return h, nil
 	}
@@ -169,11 +182,10 @@ func (h HistoryPopup) Update(msg tea.Msg) (HistoryPopup, tea.Cmd) {
 	case HistoryLoadedMsg:
 		h.errorMessage = msg.error
 		if len(msg.items) == 0 {
-			// No commands available, proceed to edit popup
+			// No commands available, proceed with empty command
 			h.active = false
-			return h, func() tea.Msg {
-				return HistorySelectedMsg{command: ""}
-			}
+			h.result = HistoryPopupResult{Command: "", Cancelled: false}
+			return h, tea.Quit
 		}
 		// Set the items in the list
 		h.list.SetItems(msg.items)
@@ -203,16 +215,16 @@ func (h HistoryPopup) handleKeyMsg(msg tea.KeyMsg) (HistoryPopup, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		h.active = false
-		return h, func() tea.Msg { return NavigateBackMsg{} }
+		h.result = HistoryPopupResult{Command: "", Cancelled: true}
+		return h, tea.Quit
 
 	case "enter":
 		// Get the selected item from the list
 		if selectedItem := h.list.SelectedItem(); selectedItem != nil {
 			if cmdItem, ok := selectedItem.(commandItem); ok {
 				h.active = false
-				return h, func() tea.Msg {
-					return HistorySelectedMsg{command: cmdItem.command}
-				}
+				h.result = HistoryPopupResult{Command: cmdItem.command, Cancelled: false}
+				return h, tea.Quit
 			}
 		}
 		return h, nil
@@ -220,9 +232,8 @@ func (h HistoryPopup) handleKeyMsg(msg tea.KeyMsg) (HistoryPopup, tea.Cmd) {
 	case "s":
 		// Skip history and proceed to add screen with empty command
 		h.active = false
-		return h, func() tea.Msg {
-			return HistorySelectedMsg{command: ""}
-		}
+		h.result = HistoryPopupResult{Command: "", Cancelled: false}
+		return h, tea.Quit
 	}
 
 	return h, nil
@@ -265,4 +276,29 @@ func (h HistoryPopup) View() string {
 		Width(popupWidth).
 		Height(popupHeight).
 		Render(content)
+}
+
+// GetResult returns the final result of the history popup
+func (h HistoryPopup) GetResult() HistoryPopupResult {
+	return h.result
+}
+
+// RunHistoryPopup runs the history popup TUI and returns the result
+func RunHistoryPopup() (HistoryPopupResult, error) {
+	// Get terminal size for proper sizing
+	popup := NewHistoryPopup(80, 24)
+	
+	program := tea.NewProgram(popup, tea.WithAltScreen())
+
+	finalModel, err := program.Run()
+	if err != nil {
+		return HistoryPopupResult{Cancelled: true}, fmt.Errorf("TUI error: %w", err)
+	}
+
+	// Extract result from final model
+	if popup, ok := finalModel.(HistoryPopup); ok {
+		return popup.GetResult(), nil
+	}
+
+	return HistoryPopupResult{Cancelled: true}, nil
 }
