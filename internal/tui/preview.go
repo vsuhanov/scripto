@@ -9,71 +9,7 @@ import (
 	"scripto/internal/script"
 )
 
-// renderPreview renders the script preview pane
-func (m Model) renderPreview(width, height int) string {
-	if len(m.scripts) == 0 {
-		emptyMsg := "No script selected"
-		style := PreviewStyle.Width(width).Height(height)
-
-		if m.focusedPane == "preview" {
-			style = style.BorderForeground(primaryColor)
-		}
-
-		return style.Render(emptyMsg)
-	}
-
-	selected := m.scripts[m.selectedIdx]
-	content := m.formatPreviewContent(selected, width-4) // Account for padding
-
-	style := PreviewStyle.Width(width).Height(height)
-
-	// Highlight focused pane
-	if m.focusedPane == "preview" {
-		style = style.BorderForeground(primaryColor)
-	}
-
-	return style.Render(content)
-}
-
-// formatPreviewContent formats the content for the preview pane
-func (m Model) formatPreviewContent(selected script.MatchResult, maxWidth int) string {
-	var sections []string
-
-	// Script title
-	title := m.formatPreviewTitle(selected)
-	sections = append(sections, title)
-
-	// Script metadata
-	metadata := m.formatPreviewMetadata(selected)
-	sections = append(sections, metadata)
-
-	// Command section removed - no longer displayed
-
-	// Placeholders
-	if len(selected.Script.Placeholders) > 0 {
-		placeholdersSection := m.formatPreviewPlaceholders(selected.Script.Placeholders)
-		sections = append(sections, placeholdersSection)
-	}
-
-	// Description
-	if selected.Script.Description != "" {
-		descSection := m.formatPreviewDescription(selected.Script.Description, maxWidth)
-		sections = append(sections, descSection)
-	}
-
-	// File content (if available)
-	if selected.Script.FilePath != "" {
-		fileSection := m.formatPreviewFileContent(selected.Script.FilePath, maxWidth)
-		if fileSection != "" {
-			sections = append(sections, fileSection)
-		}
-	}
-
-	return strings.Join(sections, "\n\n")
-}
-
-// formatPreviewTitle formats the script title
-func (m Model) formatPreviewTitle(selected script.MatchResult) string {
+func (m MainModel) formatPreviewTitle(selected script.MatchResult) string {
 	scopeIndicator := FormatScopeIndicator(selected.Scope)
 
 	var title string
@@ -87,7 +23,7 @@ func (m Model) formatPreviewTitle(selected script.MatchResult) string {
 }
 
 // formatPreviewMetadata formats script metadata
-func (m Model) formatPreviewMetadata(selected script.MatchResult) string {
+func (m MainModel) formatPreviewMetadata(selected script.MatchResult) string {
 	var metadata []string
 
 	// Scope
@@ -112,14 +48,14 @@ func (m Model) formatPreviewMetadata(selected script.MatchResult) string {
 }
 
 // formatPreviewCommand formats the script command (DEPRECATED - Command section removed)
-func (m Model) formatPreviewCommand(command string, maxWidth int) string {
+func (m MainModel) formatPreviewCommand(command string, maxWidth int) string {
 	// This function is deprecated and should not be used
 	// The Command: section has been removed from the preview
 	return ""
 }
 
 // formatPreviewPlaceholders formats the script placeholders
-func (m Model) formatPreviewPlaceholders(placeholders []string) string {
+func (m MainModel) formatPreviewPlaceholders(placeholders []string) string {
 	if len(placeholders) == 0 {
 		return ""
 	}
@@ -136,7 +72,7 @@ func (m Model) formatPreviewPlaceholders(placeholders []string) string {
 }
 
 // formatPreviewDescription formats the script description
-func (m Model) formatPreviewDescription(description string, maxWidth int) string {
+func (m MainModel) formatPreviewDescription(description string, maxWidth int) string {
 	title := PreviewTitleStyle.Render("Description:")
 
 	wrappedDesc := wrapText(description, maxWidth)
@@ -146,7 +82,7 @@ func (m Model) formatPreviewDescription(description string, maxWidth int) string
 }
 
 // formatPreviewFileContent formats the script file content preview
-func (m Model) formatPreviewFileContent(filePath string, maxWidth int) string {
+func (m MainModel) formatPreviewFileContent(filePath string, maxWidth int) string {
 	content, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return PreviewContentStyle.Render(fmt.Sprintf("Error reading file: %v", err))

@@ -2,10 +2,11 @@ package args
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
-	"scripto/internal/storage"
+	"scripto/entities"
 )
 
 // PlaceholderValue represents a placeholder and its resolved value
@@ -25,18 +26,35 @@ type ProcessResult struct {
 
 // ArgumentProcessor handles parsing and processing of script arguments
 type ArgumentProcessor struct {
-	script storage.Script
+	script entities.Script
 }
 
 // NewArgumentProcessor creates a new ArgumentProcessor for a script
-func NewArgumentProcessor(script storage.Script) *ArgumentProcessor {
+func NewArgumentProcessor(script entities.Script) *ArgumentProcessor {
 	return &ArgumentProcessor{script: script}
+}
+
+// getCommandContent reads the command content from the script's FilePath
+func (p *ArgumentProcessor) getCommandContent() (string, error) {
+	if p.script.FilePath == "" {
+		return "", fmt.Errorf("script has no file path")
+	}
+	
+	content, err := os.ReadFile(p.script.FilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read script file %s: %w", p.script.FilePath, err)
+	}
+	
+	return strings.TrimSpace(string(content)), nil
 }
 
 // ProcessArguments processes the provided arguments against the script's placeholders
 func (p *ArgumentProcessor) ProcessArguments(args []string) (*ProcessResult, error) {
 	// Extract placeholder information from the command
-	placeholders := p.extractPlaceholderInfo()
+	placeholders, err := p.extractPlaceholderInfo()
+	if err != nil {
+		return nil, err
+	}
 
 	// Process the provided arguments
 	providedValues := p.parseProvidedArguments(args)
@@ -130,12 +148,17 @@ func (p *ArgumentProcessor) parseProvidedArguments(args []string) ProvidedArgume
 }
 
 // extractPlaceholderInfo extracts placeholder information from the script command
-func (p *ArgumentProcessor) extractPlaceholderInfo() map[string]PlaceholderValue {
+func (p *ArgumentProcessor) extractPlaceholderInfo() (map[string]PlaceholderValue, error) {
 	placeholders := make(map[string]PlaceholderValue)
 
 	// Regex to match %name:description% placeholders
 	re := regexp.MustCompile(`%([^:%]+):([^%]*)%`)
-	matches := re.FindAllStringSubmatch(p.script.Command, -1)
+	command, err := p.getCommandContent()
+	if err != nil {
+		return nil, err
+	}
+	
+	matches := re.FindAllStringSubmatch(command, -1)
 
 	for _, match := range matches {
 		if len(match) >= 3 {
@@ -149,7 +172,7 @@ func (p *ArgumentProcessor) extractPlaceholderInfo() map[string]PlaceholderValue
 		}
 	}
 
-	return placeholders
+	return placeholders, nil
 }
 
 // getPlaceholderOrder returns the order of placeholders as they appear in the command
@@ -157,7 +180,12 @@ func (p *ArgumentProcessor) getPlaceholderOrder() []string {
 	var order []string
 
 	re := regexp.MustCompile(`%([^:%]+):[^%]*%`)
-	matches := re.FindAllStringSubmatch(p.script.Command, -1)
+	command, err := p.getCommandContent()
+	if err != nil {
+		return nil // Return empty slice on error
+	}
+	
+	matches := re.FindAllStringSubmatch(command, -1)
 
 	seen := make(map[string]bool)
 	for _, match := range matches {
@@ -175,7 +203,10 @@ func (p *ArgumentProcessor) getPlaceholderOrder() []string {
 
 // substitutePlaceholders replaces placeholders in the command with provided values
 func (p *ArgumentProcessor) substitutePlaceholders(placeholders map[string]PlaceholderValue) string {
-	command := p.script.Command
+	command, err := p.getCommandContent()
+	if err != nil {
+		return "" // Return empty string on error
+	}
 
 	// Replace each placeholder with its value
 	for name, placeholder := range placeholders {
@@ -199,7 +230,7 @@ func (p *ArgumentProcessor) substitutePlaceholders(placeholders map[string]Place
 
 // GetCompletionSuggestions returns completion suggestions for the given partial input
 func (p *ArgumentProcessor) GetCompletionSuggestions(args []string) []string {
-	placeholders := p.extractPlaceholderInfo()
+	placeholders, _ := p.extractPlaceholderInfo()
 	var suggestions []string
 
 	// If no arguments provided, suggest all placeholder flags
@@ -232,7 +263,7 @@ func (p *ArgumentProcessor) GetCompletionSuggestions(args []string) []string {
 
 // ValidateArguments checks if the provided arguments are valid for the script
 func (p *ArgumentProcessor) ValidateArguments(args []string) error {
-	placeholders := p.extractPlaceholderInfo()
+	placeholders, _ := p.extractPlaceholderInfo()
 	providedArgs := p.parseProvidedArguments(args)
 
 	// Check for unknown named arguments

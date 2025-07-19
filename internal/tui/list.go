@@ -7,7 +7,7 @@ import (
 )
 
 // renderList renders the script list pane
-func (m Model) renderList(width, height int) string {
+func (m MainModel) renderList(width, height int) string {
 	if len(m.scripts) == 0 {
 		emptyMsg := "No scripts found.\nUse 'scripto add' to create some scripts."
 		return ListStyle.
@@ -63,7 +63,7 @@ func (m Model) renderList(width, height int) string {
 }
 
 // formatScriptItem formats a single script item for display
-func (m Model) formatScriptItem(script script.MatchResult, index int) string {
+func (m MainModel) formatScriptItem(script script.MatchResult, index int) string {
 	var parts []string
 
 	// Add scope indicator
@@ -75,8 +75,8 @@ func (m Model) formatScriptItem(script script.MatchResult, index int) string {
 	if script.Script.Name != "" {
 		displayName = script.Script.Name
 	} else {
-		// Show truncated command for unnamed scripts
-		displayName = truncateString(script.Script.Command, 60)
+		// Show truncated file path for unnamed scripts (Command field removed)
+		displayName = truncateString(script.Script.FilePath, 60)
 	}
 
 	parts = append(parts, displayName)
@@ -128,7 +128,7 @@ func formatDirectoryName(dir string) string {
 }
 
 // calculateScrollWindow calculates which lines to show for scrolling
-func (m Model) calculateScrollWindow(lines []string, visibleHeight int) (int, int) {
+func (m MainModel) calculateScrollWindow(lines []string, visibleHeight int) (int, int) {
 	// Find the line index of the selected item
 	selectedLine := m.findSelectedLine(lines)
 
@@ -154,7 +154,7 @@ func (m Model) calculateScrollWindow(lines []string, visibleHeight int) (int, in
 }
 
 // findSelectedLine finds the line index of the currently selected script
-func (m Model) findSelectedLine(lines []string) int {
+func (m MainModel) findSelectedLine(lines []string) int {
 	// This is a simplified approach - in a real implementation,
 	// we'd need to track which line corresponds to which script
 	// For now, estimate based on selected index

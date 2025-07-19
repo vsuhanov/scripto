@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"scripto/entities"
 	"scripto/internal/storage"
 	"scripto/internal/tui"
 
@@ -66,8 +67,11 @@ You can also add a script from an existing file using the --file flag:
 				os.Exit(1)
 			}
 
+			// Get global flag
+			isGlobal := cmd.Flag("global").Changed
+			
 			// Launch TUI with pre-filled content
-			if err := launchFileEditTUI(command, sourceFilePath, suggestedName); err != nil {
+			if err := launchFileEditTUI(command, sourceFilePath, suggestedName, isGlobal); err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
 			}
@@ -157,7 +161,7 @@ func readCommandFromFile(filePath string) (string, string, string, error) {
 // StoreScript stores a script with the given parameters, checking for duplicates
 func StoreScript(config storage.Config, configPath string, name, command, description string, isGlobal bool, sourceFilePath string) error {
 	// Parse placeholders from command
-	placeholders := ParsePlaceholders(command)
+	// placeholders := ParsePlaceholders(command)
 
 	var filePath string
 	var err error
@@ -173,10 +177,9 @@ func StoreScript(config storage.Config, configPath string, name, command, descri
 		}
 	}
 
-	script := storage.Script{
+	script := entities.Script{
 		Name:         name,
-		Command:      command,
-		Placeholders: placeholders,
+		// Placeholders: placeholders,
 		Description:  description,
 		FilePath:     filePath,
 	}
@@ -228,8 +231,8 @@ func launchAddTUI() error {
 }
 
 // launchFileEditTUI launches the TUI for editing a script loaded from a file
-func launchFileEditTUI(command, filePath, suggestedName string) error {
-	result, err := tui.RunFileEditTUI(command, filePath, suggestedName)
+func launchFileEditTUI(command, filePath, suggestedName string, isGlobal bool) error {
+	result, err := tui.RunFileEditTUI(command, filePath, suggestedName, isGlobal)
 	if err != nil {
 		return fmt.Errorf("TUI error: %w", err)
 	}

@@ -18,9 +18,9 @@ const (
 // Script represents a single command script for testing
 type Script struct {
 	Name         string   `json:"name"`
-	Command      string   `json:"command"`
 	Placeholders []string `json:"placeholders"`
 	Description  string   `json:"description"`
+	FilePath     string   `json:"file_path,omitempty"`
 }
 
 // Config represents the entire configuration file for testing
@@ -116,8 +116,16 @@ func TestAddBasicCommand(t *testing.T) {
 	if script.Name != "echo" {
 		t.Errorf("Expected name 'echo', got '%s'", script.Name)
 	}
-	if script.Command != "echo hello" {
-		t.Errorf("Expected command 'echo hello', got '%s'", script.Command)
+	// Command field removed - check FilePath exists and read content  
+	if script.FilePath == "" {
+		t.Error("Expected script to have a FilePath")
+	} else {
+		content, err := os.ReadFile(script.FilePath)
+		if err != nil {
+			t.Errorf("Failed to read script file: %v", err)
+		} else if strings.TrimSpace(string(content)) != "echo hello" {
+			t.Errorf("Expected file content 'echo hello', got '%s'", strings.TrimSpace(string(content)))
+		}
 	}
 	if len(script.Placeholders) != 0 {
 		t.Errorf("Expected no placeholders, got %v", script.Placeholders)
@@ -266,7 +274,15 @@ func TestAddWithCustomName(t *testing.T) {
 	if script.Description != "Custom description" {
 		t.Errorf("Expected description 'Custom description', got '%s'", script.Description)
 	}
-	if script.Command != "ls -la" {
-		t.Errorf("Expected command 'ls -la', got '%s'", script.Command)
+	// Command field removed - check FilePath exists and read content
+	if script.FilePath == "" {
+		t.Error("Expected script to have a FilePath")
+	} else {
+		content, err := os.ReadFile(script.FilePath)
+		if err != nil {
+			t.Errorf("Failed to read script file: %v", err)
+		} else if strings.TrimSpace(string(content)) != "ls -la" {
+			t.Errorf("Expected file content 'ls -la', got '%s'", strings.TrimSpace(string(content)))
+		}
 	}
 }

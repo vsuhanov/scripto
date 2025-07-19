@@ -18,7 +18,7 @@ func Run() error {
 	}
 
 	// Handle the result
-	if m, ok := finalModel.(Model); ok {
+	if m, ok := finalModel.(MainModel); ok {
 		return handleTUIResult(m)
 	}
 
@@ -26,7 +26,7 @@ func Run() error {
 }
 
 // handleTUIResult handles the TUI exit result
-func handleTUIResult(m Model) error {
+func handleTUIResult(m MainModel) error {
 	// Check if we have any pending messages that indicate special exit conditions
 	// This is a simplified approach - in a more complex implementation,
 	// we'd use proper message handling
@@ -60,6 +60,7 @@ type AddTUIResult struct {
 }
 
 // RunAddTUI runs the TUI for adding a new script with command history selection
+// refactor: move to a Add screen specific tui file, move related structs there too
 func RunAddTUI() (AddTUIResult, error) {
 	model := NewAddModel()
 	program := tea.NewProgram(model, tea.WithAltScreen())
@@ -71,26 +72,6 @@ func RunAddTUI() (AddTUIResult, error) {
 
 	// Extract result from final model
 	if m, ok := finalModel.(AddModel); ok {
-		return AddTUIResult{
-			Cancelled: m.cancelled,
-		}, nil
-	}
-
-	return AddTUIResult{Cancelled: true}, nil
-}
-
-// RunFileEditTUI runs the TUI for editing a script loaded from a file
-func RunFileEditTUI(command, filePath, suggestedName string) (AddTUIResult, error) {
-	model := NewFileEditModel(command, filePath, suggestedName)
-	program := tea.NewProgram(model, tea.WithAltScreen())
-
-	finalModel, err := program.Run()
-	if err != nil {
-		return AddTUIResult{Cancelled: true}, fmt.Errorf("TUI error: %w", err)
-	}
-
-	// Extract result from final model
-	if m, ok := finalModel.(FileEditModel); ok {
 		return AddTUIResult{
 			Cancelled: m.cancelled,
 		}, nil
@@ -112,7 +93,7 @@ func RunWithResult() (TUIResult, error) {
 	}
 
 	// Extract result from final model
-	if m, ok := finalModel.(Model); ok {
+	if m, ok := finalModel.(MainModel); ok {
 		// Check if user quit - don't execute anything
 		if m.quitting {
 			return TUIResult{ExitCode: 3}, nil // Normal quit

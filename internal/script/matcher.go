@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"scripto/entities"
 	"scripto/internal/storage"
 )
 
@@ -21,7 +22,7 @@ const (
 // MatchResult represents a script match with confidence scoring
 type MatchResult struct {
 	Type       MatchType
-	Script     storage.Script
+	Script     entities.Script
 	Directory  string // Directory where script was found
 	Scope      string // "local", "parent", "global"
 	Confidence float64
@@ -116,15 +117,8 @@ func (m *ScriptMatcher) Match(input string) (*MatchResult, error) {
 		}
 	}
 
-	// Try partial command matches
+	// Command field removed - partial command matching no longer available
 	var candidates []MatchResult
-	for _, result := range allScripts {
-		if strings.HasPrefix(result.Script.Command, input) {
-			result.Type = PartialCommand
-			result.Confidence = calculateCommandConfidence(input, result.Script.Command)
-			candidates = append(candidates, result)
-		}
-	}
 
 	// Sort candidates by confidence (highest first), then by scope priority
 	sort.Slice(candidates, func(i, j int) bool {
@@ -154,7 +148,7 @@ func (m *ScriptMatcher) FilterByKeyword(keyword string) ([]MatchResult, error) {
 
 	for _, result := range allScripts {
 		// Check if keyword appears in name or command
-		searchText := strings.ToLower(result.Script.Name + " " + result.Script.Command)
+		searchText := strings.ToLower(result.Script.Name + " " + result.Script.Description)
 		if strings.Contains(searchText, keyword) {
 			// Calculate confidence based on keyword match quality
 			result.Confidence = calculateKeywordConfidence(keyword, result.Script)
@@ -193,7 +187,7 @@ func calculateCommandConfidence(input, command string) float64 {
 }
 
 // calculateKeywordConfidence calculates how well the keyword matches the script
-func calculateKeywordConfidence(keyword string, script storage.Script) float64 {
+func calculateKeywordConfidence(keyword string, script entities.Script) float64 {
 	confidence := 0.0
 
 	// Exact name match gets highest score
@@ -204,7 +198,7 @@ func calculateKeywordConfidence(keyword string, script storage.Script) float64 {
 	}
 
 	// Command matches get lower scores
-	if strings.Contains(strings.ToLower(script.Command), keyword) {
+	if strings.Contains(strings.ToLower(script.Description), keyword) {
 		confidence = max(confidence, 0.6)
 	}
 

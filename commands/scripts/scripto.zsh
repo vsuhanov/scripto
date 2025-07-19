@@ -28,7 +28,8 @@ scripto() {
     
     # Check if a command was written to the file
     if [ $exit_code -eq 0 ] && [ -s "$cmd_file" ]; then
-        # Script execution - read the script path and source it
+        # refactor: cmd_file will contain the actual command that needs to be executed. so we should source the $cmd_file
+        
         local script_path=$(cat "$cmd_file")
         
         # Check if it's a file path (starts with / or contains .zsh/.sh extension)
@@ -38,6 +39,8 @@ scripto() {
             local source_exit=$?
             rm -f "$cmd_file"
             return $source_exit
+
+            # refactor: this fallback is not required, the command file content will either be direct code or will be a call to execute a script file.
         else
             # Fallback: treat as direct command for backward compatibility
             eval "$script_path"

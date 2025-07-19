@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"scripto/entities"
 	"scripto/internal/args"
 	"scripto/internal/prompt"
 	"scripto/internal/script"
@@ -162,7 +163,12 @@ func executePartialCommand(matchResult *script.MatchResult, userArgs []string) e
 		}
 		result.FinalCommand = newResult.FinalCommand
 	} else {
-		result.FinalCommand = matchResult.Script.Command
+		// Command field removed - use FilePath instead
+		if matchResult.Script.FilePath != "" {
+			result.FinalCommand = matchResult.Script.FilePath
+		} else {
+			return fmt.Errorf("script has no file path")
+		}
 	}
 
 	return executeScriptFile(matchResult, result.FinalCommand)
@@ -201,11 +207,11 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 	// Now execute the saved script
 	if len(placeholders) > 0 {
 		// Create a script object for processing
-		savedScript := storage.Script{
+		savedScript := entities.Script{
 			Name:         name,
-			Command:      input,
-			Placeholders: placeholders,
+			// Placeholders: placeholders,
 			Description:  description,
+			// Note: Command field removed - this code path may need revision
 		}
 
 		processor := args.NewArgumentProcessor(savedScript)
@@ -292,7 +298,7 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 			// Named script - use scope as group name
 			description := result.Script.Description
 			if description == "" {
-				description = result.Script.Command
+				description = result.Script.Description
 			}
 
 			// Filter and strip prefix if needed
@@ -308,7 +314,7 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 			suggestions = append(suggestions, result.Directory+separator+name+separator+description)
 		} else {
 			// Unnamed script - show command, use scope as group name
-			command := result.Script.Command
+			command := result.Script.FilePath
 			displayCommand := command
 			// if len(displayCommand) > 50 {
 			// 	displayCommand = displayCommand[:47] + "..."
@@ -329,7 +335,7 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 				// }
 			}
 
-			suggestions = append(suggestions, result.Directory+separator+displayCommand+separator+result.Script.Command)
+			suggestions = append(suggestions, result.Directory+separator+displayCommand+separator+result.Script.FilePath)
 		}
 	}
 	return suggestions

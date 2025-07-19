@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"scripto/entities"
 )
 
 const (
@@ -17,19 +19,8 @@ const (
 	scriptsDir = "scripts"
 )
 
-// Script represents a single command script.
-
-type Script struct {
-	Name         string   `json:"name"`
-	Command      string   `json:"command"`
-	Placeholders []string `json:"placeholders"`
-	Description  string   `json:"description"`
-	FilePath     string   `json:"file_path,omitempty"`
-}
-
 // Config represents the entire configuration file.
-
-type Config map[string][]Script
+type Config map[string][]entities.Script
 
 // GetConfigPath returns the absolute path to the configuration file.
 // It checks for SCRIPTO_CONFIG environment variable first, then falls back to default.

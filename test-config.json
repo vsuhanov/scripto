@@ -1,0 +1,21 @@
+{
+  "/Users/vitaly/projects/scripto": [
+    {
+      "name": "test-from-file",
+      "command": "#!/bin/bash\n\necho \"This is a test script\"\necho \"Running with parameter: %param:description%\"\nls -la",
+      "placeholders": [
+        "param"
+      ],
+      "description": "Test script added from file",
+      "file_path": "/Users/vitaly/projects/scripto/test-script.sh"
+    }
+  ],
+  "global": [
+    {
+      "name": "test-script",
+      "command": "echo 'Hello World'",
+      "placeholders": [],
+      "description": "A test script"
+    }
+  ]
+}

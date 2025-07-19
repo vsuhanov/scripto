@@ -297,7 +297,7 @@ scripto add --name "ssh-connect" "ssh %user:Username%@%host:Hostname%"
 
 ### Environment Variables
 
-- `SCRIPTO_CONFIG` - Custom path for scripts configuration file
+- `SCRIPTO_CONFIG` - Custom path for scripto configuration
 - `SCRIPTO_EDITOR` - Preferred editor for external editing (defaults to `$EDITOR`, then `vi`)
 - `SCRIPTO_CMD_FD` - Internal use for shell integration
 

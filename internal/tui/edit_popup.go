@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"scripto/entities"
 	"scripto/internal/script"
 	"scripto/internal/storage"
 )
@@ -68,7 +69,14 @@ func NewEditPopup(script script.MatchResult, width, height int) EditPopup {
 	// Create command textarea
 	commandTextarea := textarea.New()
 	commandTextarea.Placeholder = "Enter command here..."
-	commandTextarea.SetValue(script.Script.Command)
+	// Read command from file if available
+	var commandContent string
+	if script.Script.FilePath != "" {
+		if content, err := os.ReadFile(script.Script.FilePath); err == nil {
+			commandContent = strings.TrimSpace(string(content))
+		}
+	}
+	commandTextarea.SetValue(commandContent)
 	commandTextarea.SetWidth(componentWidth)
 	commandTextarea.SetHeight(6)
 
@@ -222,9 +230,8 @@ func (e EditPopup) saveScript() tea.Cmd {
 			scriptRemoved := false
 			if scripts, exists := config[oldKey]; exists {
 				for i, script := range scripts {
-					// Use more precise matching including description
+					// Use more precise matching including description (Command field removed)
 					if script.Name == e.originalScript.Script.Name &&
-						script.Command == e.originalScript.Script.Command &&
 						script.FilePath == e.originalScript.Script.FilePath &&
 						script.Description == e.originalScript.Script.Description {
 						config[oldKey] = append(scripts[:i], scripts[i+1:]...)
@@ -261,8 +268,6 @@ func (e EditPopup) saveScript() tea.Cmd {
 		description := e.descriptionInput.Value()
 		command := e.commandTextarea.Value()
 
-		// Parse placeholders from the command
-		placeholders := ParsePlaceholders(command)
 
 		// Create or update script file
 		var filePath string
@@ -278,11 +283,9 @@ func (e EditPopup) saveScript() tea.Cmd {
 		}
 
 		// Create updated script
-		newScript := storage.Script{
+		newScript := entities.Script{
 			Name:         name,
-			Command:      command,
 			Description:  description,
-			Placeholders: placeholders,
 			FilePath:     filePath,
 		}
 
@@ -298,7 +301,7 @@ func (e EditPopup) saveScript() tea.Cmd {
 
 		// Add to config
 		if config[newKey] == nil {
-			config[newKey] = []storage.Script{}
+			config[newKey] = []entities.Script{}
 		}
 		config[newKey] = append(config[newKey], newScript)
 
@@ -309,7 +312,7 @@ func (e EditPopup) saveScript() tea.Cmd {
 
 		// Update script file if it exists
 		if newScript.FilePath != "" {
-			if err := os.WriteFile(newScript.FilePath, []byte(newScript.Command), 0644); err != nil {
+			if err := os.WriteFile(newScript.FilePath, []byte(command), 0644); err != nil {
 				return ErrorMsg(fmt.Errorf("failed to update script file: %w", err))
 			}
 		}
