@@ -11,6 +11,11 @@ import (
 	"scripto/entities"
 )
 
+// AddTUIResult represents the result of the add TUI
+type AddTUIResult struct {
+	Cancelled bool
+}
+
 // NavigationState represents different states in the add flow
 type NavigationState int
 
@@ -262,4 +267,24 @@ func (m AddModel) View() string {
 	}
 
 	return content
+}
+
+// RunAddTUI runs the TUI for adding a new script with command history selection
+func RunAddTUI() (AddTUIResult, error) {
+	model := NewAddModel()
+	program := tea.NewProgram(model, tea.WithAltScreen())
+
+	finalModel, err := program.Run()
+	if err != nil {
+		return AddTUIResult{Cancelled: true}, fmt.Errorf("TUI error: %w", err)
+	}
+
+	// Extract result from final model
+	if m, ok := finalModel.(AddModel); ok {
+		return AddTUIResult{
+			Cancelled: m.cancelled,
+		}, nil
+	}
+
+	return AddTUIResult{Cancelled: true}, nil
 }

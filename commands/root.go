@@ -44,6 +44,7 @@ Examples:
 				}
 			case tui.ActionEdit:
 				// Write script path for editor and exit with special code
+        // refactor: call a different method that is going to write the scriptPath to the file, executeCommand will be reserved for cases when we need to execute the command
 				if err := executeCommand(result.ScriptPath); err != nil {
 					fmt.Fprintf(os.Stderr, "Error writing script path: %v\n", err)
 					os.Exit(1)
@@ -272,6 +273,8 @@ func executeScriptFile(matchResult *script.MatchResult, finalCommand string) err
 }
 
 // executeCommand outputs the command for shell function to evaluate
+// refactor: this method needs to read the scriptPath (passed as command - parameter should be renamed), This method should read the contents of the file, if it starts with a shebang, then it needs to write the file name to the file (but better to call a method that is going to construct a script for shebang case). * if the file does not start with a shebang - write the contents of the file to the cmdFdPath so it's executed. It will need to process the placeholders, this method better receive a map of placeholders values, also need to extract a method that performs the logic and returns the command to execute, it should be moved to a different module and called here so this is a simple wrapper that calls a `GetCommandToExecute(filePath, placeholders)` and writes the response to cmdFdPath file. This other method may be used by something else potentially.
+
 func executeCommand(command string) error {
 	// Check if we have a custom file descriptor for command output
 	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")

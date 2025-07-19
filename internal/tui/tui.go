@@ -54,31 +54,6 @@ type TUIResult struct {
 	ExitCode   int
 }
 
-// AddTUIResult represents the result of the add TUI
-type AddTUIResult struct {
-	Cancelled bool
-}
-
-// RunAddTUI runs the TUI for adding a new script with command history selection
-// refactor: move to a Add screen specific tui file, move related structs there too
-func RunAddTUI() (AddTUIResult, error) {
-	model := NewAddModel()
-	program := tea.NewProgram(model, tea.WithAltScreen())
-
-	finalModel, err := program.Run()
-	if err != nil {
-		return AddTUIResult{Cancelled: true}, fmt.Errorf("TUI error: %w", err)
-	}
-
-	// Extract result from final model
-	if m, ok := finalModel.(AddModel); ok {
-		return AddTUIResult{
-			Cancelled: m.cancelled,
-		}, nil
-	}
-
-	return AddTUIResult{Cancelled: true}, nil
-}
 
 // RunWithResult runs the TUI and returns the selected script or action
 func RunWithResult() (TUIResult, error) {
@@ -121,10 +96,6 @@ func RunWithResult() (TUIResult, error) {
 
 			// Return script path for execution
 			scriptPath := selected.Script.FilePath
-			if scriptPath == "" {
-				scriptPath = selected.Script.Command
-			}
-
 			return TUIResult{
 				Action:     ActionExecute,
 				ScriptPath: scriptPath,

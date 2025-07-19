@@ -224,7 +224,6 @@ func (m MainModel) handleTabSwitch() MainModel {
 	return m
 }
 
-// Action handlers
 func (m MainModel) handleEnter() (tea.Model, tea.Cmd) {
 	if len(m.scripts) == 0 {
 		return m, nil
@@ -233,40 +232,8 @@ func (m MainModel) handleEnter() (tea.Model, tea.Cmd) {
 	selected := m.scripts[m.selectedIdx]
 	scriptPath := selected.Script.FilePath
 
-	// If script has no file path, use the command directly
-	if scriptPath == "" {
-		return m, tea.Sequence(
-			func() tea.Msg { return ExitWithScriptMsg(selected.Script.Name) },
-			tea.Quit,
-		)
-	}
-
-	// Read the file content
-	content, err := ioutil.ReadFile(scriptPath)
-	if err != nil {
-		// Fallback to script path if file read fails
-		return m, tea.Sequence(
-			func() tea.Msg { return ExitWithScriptMsg(scriptPath) },
-			tea.Quit,
-		)
-	}
-
-	contentStr := string(content)
-
-	// Check if content starts with shebang
-	if strings.HasPrefix(contentStr, "#!") {
-		// Content has shebang, execute the script file directly
-		return m, tea.Sequence(
-			func() tea.Msg { return ExitWithScriptMsg(scriptPath) },
-			tea.Quit,
-		)
-	}
-
-	// No shebang, process placeholders in the content
-	processedContent := processPlaceholders(contentStr, selected.Script.Placeholders)
-
 	return m, tea.Sequence(
-		func() tea.Msg { return ExitWithScriptMsg(processedContent) },
+		func() tea.Msg { return ExitWithScriptMsg(scriptPath) },
 		tea.Quit,
 	)
 }
@@ -278,7 +245,6 @@ func (m MainModel) handleInlineEdit() (tea.Model, tea.Cmd) {
 
 	selected := m.scripts[m.selectedIdx]
 
-	// Create edit popup
 	popup := NewEditPopup(selected, m.width, m.height)
 	m.editPopup = &popup
 
