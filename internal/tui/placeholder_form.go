@@ -19,6 +19,7 @@ type PlaceholderFormModel struct {
 	submitted    bool
 	cancelled    bool
 	values       map[string]string
+	buttonFocus  int // 0 = inputs, 1 = Execute button, 2 = Cancel button
 }
 
 // PlaceholderFormResult represents the result of the placeholder form
@@ -49,6 +50,7 @@ func NewPlaceholderForm(placeholders []args.PlaceholderValue) PlaceholderFormMod
 		inputs:       inputs,
 		focused:      0,
 		values:       make(map[string]string),
+		buttonFocus:  0, // Start with inputs focused
 	}
 }
 
@@ -67,8 +69,7 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 			
 		case "enter":
-			// If on the last input, submit the form
-			if m.focused == len(m.inputs)-1 {
+			if m.buttonFocus == 1 { // Execute button focused
 				m.submitted = true
 				
 				// Collect all values
@@ -81,24 +82,33 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				
 				return m, tea.Quit
+			} else if m.buttonFocus == 2 { // Cancel button focused
+				m.cancelled = true
+				return m, tea.Quit
+			} else {
+				// In input field, move to next input or to buttons if at last input
+				if m.focused == len(m.inputs)-1 {
+					return m.nextFocus()
+				}
+				return m.nextInput()
 			}
 			
-			// Move to next input
-			return m.nextInput()
+		case "tab", "down":
+			return m.nextFocus()
 			
-		case "tab", "shift+tab", "up", "down":
-			if msg.String() == "shift+tab" || msg.String() == "up" {
-				return m.prevInput()
-			}
-			return m.nextInput()
+		case "shift+tab", "up":
+			return m.prevFocus()
 		}
 	}
 
-	// Update the focused input
-	var cmd tea.Cmd
-	m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
+	// Update the focused input only if we're in input mode
+	if m.buttonFocus == 0 {
+		var cmd tea.Cmd
+		m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
+		return m, cmd
+	}
 	
-	return m, cmd
+	return m, nil
 }
 
 // View renders the placeholder form
@@ -142,7 +152,7 @@ func (m PlaceholderFormModel) View() string {
 		
 		// Input field
 		inputStyle := lipgloss.NewStyle().MarginBottom(1)
-		if i == m.focused {
+		if i == m.focused && m.buttonFocus == 0 {
 			inputStyle = inputStyle.BorderStyle(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("62"))
 		}
@@ -151,27 +161,101 @@ func (m PlaceholderFormModel) View() string {
 		b.WriteString("\n")
 	}
 	
+	// Buttons
+	b.WriteString("\n")
+	executeStyle := lipgloss.NewStyle().
+		Padding(0, 2).
+		Margin(0, 1).
+		Background(lipgloss.Color("34")).
+		Foreground(lipgloss.Color("255"))
+		
+	cancelStyle := lipgloss.NewStyle().
+		Padding(0, 2).
+		Margin(0, 1).
+		Background(lipgloss.Color("196")).
+		Foreground(lipgloss.Color("255"))
+	
+	// Highlight focused button
+	if m.buttonFocus == 1 {
+		executeStyle = executeStyle.BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("62"))
+	}
+	if m.buttonFocus == 2 {
+		cancelStyle = cancelStyle.BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("62"))
+	}
+	
+	executeButton := executeStyle.Render("Execute")
+	cancelButton := cancelStyle.Render("Cancel")
+	
+	buttonsRow := lipgloss.JoinHorizontal(lipgloss.Left, executeButton, cancelButton)
+	b.WriteString(buttonsRow)
+	b.WriteString("\n\n")
+	
 	// Instructions
 	instructionStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241")).
 		MarginTop(1)
 	
-	b.WriteString(instructionStyle.Render("Tab/Enter: Next field • Shift+Tab: Previous field • Esc: Cancel"))
+	b.WriteString(instructionStyle.Render("Tab/↓: Next • Shift+Tab/↑: Previous • Enter: Activate • Esc: Cancel"))
 	
 	return b.String()
 }
 
-// nextInput moves focus to the next input
+// nextFocus moves focus to the next element (input or button)
+func (m PlaceholderFormModel) nextFocus() (PlaceholderFormModel, tea.Cmd) {
+	if m.buttonFocus == 0 { // Currently in inputs
+		if m.focused < len(m.inputs)-1 {
+			// Move to next input
+			m.inputs[m.focused].Blur()
+			m.focused++
+			return m, m.inputs[m.focused].Focus()
+		} else {
+			// Move to Execute button
+			m.inputs[m.focused].Blur()
+			m.buttonFocus = 1
+			return m, nil
+		}
+	} else if m.buttonFocus == 1 { // Currently on Execute button
+		m.buttonFocus = 2 // Move to Cancel button
+		return m, nil
+	} else { // Currently on Cancel button
+		// Move back to first input
+		m.buttonFocus = 0
+		m.focused = 0
+		return m, m.inputs[m.focused].Focus()
+	}
+}
+
+// prevFocus moves focus to the previous element (input or button)
+func (m PlaceholderFormModel) prevFocus() (PlaceholderFormModel, tea.Cmd) {
+	if m.buttonFocus == 0 { // Currently in inputs
+		if m.focused > 0 {
+			// Move to previous input
+			m.inputs[m.focused].Blur()
+			m.focused--
+			return m, m.inputs[m.focused].Focus()
+		} else {
+			// Move to Cancel button
+			m.inputs[m.focused].Blur()
+			m.buttonFocus = 2
+			return m, nil
+		}
+	} else if m.buttonFocus == 2 { // Currently on Cancel button
+		m.buttonFocus = 1 // Move to Execute button
+		return m, nil
+	} else { // Currently on Execute button
+		// Move to last input
+		m.buttonFocus = 0
+		m.focused = len(m.inputs) - 1
+		return m, m.inputs[m.focused].Focus()
+	}
+}
+
+// nextInput moves focus to the next input (within inputs only)
 func (m PlaceholderFormModel) nextInput() (PlaceholderFormModel, tea.Cmd) {
 	m.inputs[m.focused].Blur()
 	m.focused = (m.focused + 1) % len(m.inputs)
-	return m, m.inputs[m.focused].Focus()
-}
-
-// prevInput moves focus to the previous input
-func (m PlaceholderFormModel) prevInput() (PlaceholderFormModel, tea.Cmd) {
-	m.inputs[m.focused].Blur()
-	m.focused = (m.focused - 1 + len(m.inputs)) % len(m.inputs)
 	return m, m.inputs[m.focused].Focus()
 }
 
