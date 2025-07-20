@@ -51,8 +51,8 @@ func (p *ArgumentProcessor) getCommandContent() (string, error) {
 	return strings.TrimSpace(string(content)), nil
 }
 
-// hasPositionalPlaceholders checks if the script has any positional placeholders
-func (p *ArgumentProcessor) hasPositionalPlaceholders() (bool, error) {
+// HasPositionalPlaceholders checks if the script has any positional placeholders
+func (p *ArgumentProcessor) HasPositionalPlaceholders() (bool, error) {
 	placeholders, err := p.extractPlaceholderInfo()
 	if err != nil {
 		return false, err
@@ -76,14 +76,15 @@ func (p *ArgumentProcessor) ProcessArguments(args []string) (*ProcessResult, err
 	}
 
 	// Check if this script has positional placeholders (disables named arguments)
-	hasPositional, err := p.hasPositionalPlaceholders()
+	hasPositional, err := p.HasPositionalPlaceholders()
 	if err != nil {
 		return nil, err
 	}
 
 	// Process the provided arguments
 	providedValues := p.parseProvidedArguments(args)
-
+  log.Printf("args: %s", args)
+  log.Printf("providedValues: %s", providedValues)
 	// If script has positional placeholders, reject any named arguments
 	if hasPositional && len(providedValues.Named) > 0 {
 		return nil, fmt.Errorf("named arguments not allowed when script contains positional placeholders")

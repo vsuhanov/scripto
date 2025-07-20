@@ -5,10 +5,9 @@ import (
 	"os"
 	"strings"
 
-	"scripto/entities"
+	// "scripto/entities"
 	"scripto/internal/args"
 	"scripto/internal/execution"
-	"scripto/internal/prompt"
 	"scripto/internal/script"
 	"scripto/internal/services"
 	"scripto/internal/storage"
@@ -252,9 +251,24 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 			}
 		}
 
-		// Regenerate final command with all placeholders resolved
-		newProcessor := args.NewArgumentProcessor(matchResult.Script)
-		newResult, err := newProcessor.ProcessArguments(append(scriptArgs, convertToArgs(missingValues)...))
+		// Check if script has positional placeholders
+		processor := args.NewArgumentProcessor(matchResult.Script)
+		hasPositional, err := processor.HasPositionalPlaceholders()
+		if err != nil {
+			return fmt.Errorf("failed to check placeholder types: %w", err)
+		}
+
+		// Convert values to appropriate argument format and regenerate final command
+		var additionalArgs []string
+		if hasPositional {
+			// For positional scripts, convert named values to positional arguments
+			additionalArgs = convertToPositionalArgs(missingValues, result.MissingArgs)
+		} else {
+			// For named scripts, convert to named arguments
+			additionalArgs = convertToArgs(missingValues)
+		}
+
+		newResult, err := processor.ProcessArguments(append(scriptArgs, additionalArgs...))
 		if err != nil {
 			return err
 		}
@@ -268,102 +282,56 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 
 // handleNoMatch handles the case when no script matches
 func handleNoMatch(input string, config storage.Config, configPath string) error {
-	prompter := prompt.NewPlaceholderPrompter(prompt.NewConsolePrompter())
-
-	// Ask if user wants to save the command
-	save, name, description, err := prompter.PromptToSaveCommand(input)
-	if err != nil {
-		return err
-	}
-
-	if !save {
-		return fmt.Errorf("command not found: %s", input)
-	}
-
-	// Prompt for scope (global or local)
-	global, err := prompter.PromptForScope()
-	if err != nil {
-		return fmt.Errorf("failed to prompt for scope: %w", err)
-	}
-
-	// Use the service layer to store the script
+	// Use TUI to create and save new script
 	service, err := services.NewScriptService()
 	if err != nil {
 		return fmt.Errorf("failed to create script service: %w", err)
 	}
 
-	// Create script with scope
-	scope := "global"
-	if !global {
-		scope, _ = os.Getwd()
+	// Create new scriptObj with command pre-filled
+	scriptObj := service.CreateEmptyScript()
+	scriptObj.Scope = service.GetCurrentDirectoryScope() // Default to local scope
+
+	// Create a temporary script file with the command
+	tempFilePath, err := service.CreateTempScriptFile(input)
+	if err != nil {
+		return fmt.Errorf("failed to create temp script file: %w", err)
+	}
+	scriptObj.FilePath = tempFilePath
+
+	// Launch the script editor with a custom prompt message
+	fmt.Printf("Command '%s' not found. Create new script?\n", input)
+	
+	result, err := tui.RunScriptEditor(scriptObj, true)
+	if err != nil {
+		return fmt.Errorf("TUI error: %w", err)
 	}
 
-	script := entities.Script{
-		Name:        name,
-		Description: description,
-		Scope:       scope,
+	if result.Cancelled {
+		return fmt.Errorf("command not found: %s", input)
 	}
 
-	if err := service.SaveScript(script, input, nil); err != nil {
-		return err
+	// Save the script using the service
+	finalCommand := result.Command
+	if finalCommand == "" {
+		finalCommand = input
 	}
 
-	fmt.Printf("Saved script: %s\n", input)
-
-	// Parse placeholders for execution
-	placeholders := ParsePlaceholders(input)
-
-	// Now execute the saved script
-	if len(placeholders) > 0 {
-		// Create a script object for processing
-		savedScript := entities.Script{
-			Name:         name,
-			// Placeholders: placeholders,
-			Description:  description,
-			// Note: Command field removed - this code path may need revision
-		}
-
-		processor := args.NewArgumentProcessor(savedScript)
-		result, err := processor.ProcessArguments([]string{})
-		if err != nil {
-			return err
-		}
-
-		formResult, err := tui.RunPlaceholderForm(result.MissingArgs)
-		if err != nil {
-			return fmt.Errorf("failed to collect placeholder values: %w", err)
-		}
-		
-		if formResult.Cancelled {
-			return fmt.Errorf("operation cancelled by user")
-		}
-		
-		missingValues := formResult.Values
-
-		// Substitute placeholders
-		finalCommand := input
-		for name, value := range missingValues {
-			pattern := fmt.Sprintf("%%%s:", name)
-			if strings.Contains(finalCommand, pattern) {
-				// Find and replace the placeholder
-				start := strings.Index(finalCommand, pattern)
-				if start != -1 {
-					// Find the next % that closes the placeholder
-					endSearch := finalCommand[start+len(pattern):]
-					endIdx := strings.Index(endSearch, "%")
-					if endIdx != -1 {
-						end := start + len(pattern) + endIdx + 1
-						placeholder := finalCommand[start:end]
-						finalCommand = strings.Replace(finalCommand, placeholder, value, 1)
-					}
-				}
-			}
-		}
-
-		return executeFinalCommand(finalCommand)
+	if err := service.SaveScript(result.Script, finalCommand, nil); err != nil {
+		return fmt.Errorf("failed to save script: %w", err)
 	}
 
-	return executeFinalCommand(input)
+	fmt.Printf("Saved script successfully\n")
+
+	// Now execute the saved script using the unified flow
+	// Create a match result for the newly saved script
+	matchResult := &script.MatchResult{
+		Type:       script.ExactName,
+		Script:     result.Script,
+		Confidence: 1.0,
+	}
+
+	return executeFoundScript(matchResult, []string{})
 }
 
 // convertToArgs converts a map of values to argument format
@@ -371,6 +339,18 @@ func convertToArgs(values map[string]string) []string {
 	var arguments []string
 	for name, value := range values {
 		arguments = append(arguments, fmt.Sprintf("--%s=%s", name, value))
+	}
+	return arguments
+}
+
+// convertToPositionalArgs converts named values back to positional arguments based on order
+func convertToPositionalArgs(values map[string]string, missingArgs []args.PlaceholderValue) []string {
+	var arguments []string
+	// Convert based on the order of missing arguments (which preserves original placeholder order)
+	for _, placeholder := range missingArgs {
+		if value, exists := values[placeholder.Name]; exists {
+			arguments = append(arguments, value)
+		}
 	}
 	return arguments
 }
