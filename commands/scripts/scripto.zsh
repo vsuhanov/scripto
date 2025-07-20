@@ -1,3 +1,15 @@
+# Load shortcuts function - sources all function files from bin directory
+scripto_load_shortcuts() {
+    local bin_dir="${SCRIPTO_CONFIG:-$HOME/.scripto}/bin"
+    if [ -d "$bin_dir" ]; then
+        for func_file in "$bin_dir"/*.zsh; do
+            [ -f "$func_file" ] && source "$func_file"
+        done
+    fi
+}
+
+scripto_load_shortcuts()
+
 scripto() {
     # Create a temporary file for command communication
     local cmd_file=$(mktemp)
@@ -32,10 +44,14 @@ scripto() {
         source "$cmd_file"
         local source_exit=$?
         rm -f "$cmd_file"
+        # Load shortcuts after script execution
+        scripto_load_shortcuts
         return $source_exit
     elif [ $exit_code -eq 3 ]; then
         # Built-in command completed - cleanup and return success
         rm -f "$cmd_file"
+        # Load shortcuts after built-in commands (like add)
+        scripto_load_shortcuts
         return 0
     elif [ $exit_code -eq 4 ] && [ -s "$cmd_file" ]; then
         # Edit mode - read script path and open in editor
@@ -56,17 +72,25 @@ scripto() {
             # Execute the script
             if [[ "$script_path" == *".zsh" ]] || [[ "$script_path" == *".sh" ]]; then
                 source "$script_path"
-                return $?
+                local exec_exit=$?
+                # Load shortcuts after script execution
+                scripto_load_shortcuts
+                return $exec_exit
             else
                 # Fallback to reading file content and eval
                 local script_content=$(cat "$script_path" 2>/dev/null)
                 if [ -n "$script_content" ]; then
                     eval "$script_content"
-                    return $?
+                    local eval_exit=$?
+                    # Load shortcuts after script execution
+                    scripto_load_shortcuts
+                    return $eval_exit
                 fi
             fi
         fi
         
+        # Load shortcuts even if script wasn't executed (in case changes were made)
+        scripto_load_shortcuts
         return $editor_exit
     else
         # Error occurred - cleanup and return error

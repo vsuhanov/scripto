@@ -87,6 +87,23 @@ func (s *ScriptService) SaveScript(script entities.Script, command string, origi
 		return fmt.Errorf("failed to update script file: %w", err)
 	}
 
+	// Handle shortcuts for global named scripts
+	if script.Scope == "global" && script.Name != "" {
+		// Remove old shortcut if this is an update and name changed
+		if originalScript != nil && originalScript.Name != "" && originalScript.Name != script.Name {
+			if err := storage.RemoveShortcutFunction(originalScript.Name); err != nil {
+				// Log error but don't fail the entire operation
+				fmt.Fprintf(os.Stderr, "Warning: failed to remove old shortcut for '%s': %v\n", originalScript.Name, err)
+			}
+		}
+		
+		// Create new shortcut
+		if err := storage.CreateShortcutFunction(script.Name); err != nil {
+			// Log error but don't fail the entire operation
+			fmt.Fprintf(os.Stderr, "Warning: failed to create shortcut for '%s': %v\n", script.Name, err)
+		}
+	}
+
 	return nil
 }
 
@@ -112,6 +129,14 @@ func (s *ScriptService) DeleteScript(script entities.Script) error {
 	if script.FilePath != "" {
 		if err := os.Remove(script.FilePath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove script file: %w", err)
+		}
+	}
+
+	// Remove shortcut for global named scripts
+	if script.Scope == "global" && script.Name != "" {
+		if err := storage.RemoveShortcutFunction(script.Name); err != nil {
+			// Log error but don't fail the entire operation
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove shortcut for '%s': %v\n", script.Name, err)
 		}
 	}
 
@@ -226,4 +251,20 @@ func (s *ScriptService) CreateTempScriptFile(command string) (string, error) {
 		return "", fmt.Errorf("failed to create temp script file: %w", err)
 	}
 	return filePath, nil
+}
+
+// SyncShortcuts synchronizes all shortcuts with the current configuration
+func (s *ScriptService) SyncShortcuts() error {
+	// Load current config
+	config, err := storage.ReadConfig(s.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	// Sync shortcuts using storage layer
+	if err := storage.SyncShortcuts(config); err != nil {
+		return fmt.Errorf("failed to sync shortcuts: %w", err)
+	}
+
+	return nil
 }

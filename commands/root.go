@@ -496,6 +496,9 @@ func getCompletionSuggestions(toComplete string) ([]string, cobra.ShellCompDirec
 }
 
 func Execute() {
+	// Sync shortcuts before executing any command
+	syncShortcutsQuietly()
+
 	// Get command line arguments
 	cmdArgs := os.Args[1:]
 
@@ -575,4 +578,15 @@ func handleCompletion(args []string) {
 
 	// End with the completion directive
 	fmt.Println(":36") // ShellCompDirectiveNoFileComp | ShellCompDirectiveKeepOrder
+}
+
+// syncShortcutsQuietly synchronizes shortcuts without printing errors to avoid interfering with completion
+func syncShortcutsQuietly() {
+	service, err := services.NewScriptService()
+	if err != nil {
+		return // Silently ignore initialization errors
+	}
+	
+	// Silently sync shortcuts - errors are ignored to avoid interfering with normal operation
+	_ = service.SyncShortcuts()
 }

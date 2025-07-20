@@ -191,3 +191,144 @@ func SaveScriptToFile(name, command string) (string, error) {
 
 	return filePath, nil
 }
+
+// GetBinDir returns the path to the bin directory for shortcuts
+func GetBinDir() (string, error) {
+	// Check for custom config path via environment variable
+	if customPath := os.Getenv("SCRIPTO_CONFIG"); customPath != "" {
+		// Use the directory of the custom config path
+		dir := filepath.Dir(customPath)
+		return filepath.Join(dir, "bin"), nil
+	}
+
+	// Default to home directory
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, configDir, "bin"), nil
+}
+
+// CreateShortcutFunction creates a shell function file for a named script
+func CreateShortcutFunction(name string) error {
+	if name == "" {
+		return fmt.Errorf("script name cannot be empty")
+	}
+
+	binDir, err := GetBinDir()
+	if err != nil {
+		return fmt.Errorf("failed to get bin directory: %w", err)
+	}
+
+	// Create bin directory if it doesn't exist
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	// Sanitize name for filename
+	sanitizedName := SanitizeForFilename(name)
+	if sanitizedName != name {
+		// If sanitization changed the name, use original name in function but sanitized for filename
+		functionName := name
+		filename := sanitizedName + GetShellExtension()
+		filePath := filepath.Join(binDir, filename)
+
+		functionContent := fmt.Sprintf("function %s() {\n  scripto \"%s\" \"$@\"\n}\n", functionName, name)
+		return os.WriteFile(filePath, []byte(functionContent), 0644)
+	}
+
+	// Name is already safe for filename
+	filename := name + GetShellExtension()
+	filePath := filepath.Join(binDir, filename)
+
+	functionContent := fmt.Sprintf("function %s() {\n  scripto \"%s\" \"$@\"\n}\n", name, name)
+	return os.WriteFile(filePath, []byte(functionContent), 0644)
+}
+
+// RemoveShortcutFunction removes a shell function file for a named script
+func RemoveShortcutFunction(name string) error {
+	if name == "" {
+		return nil // Nothing to remove for empty name
+	}
+
+	binDir, err := GetBinDir()
+	if err != nil {
+		return fmt.Errorf("failed to get bin directory: %w", err)
+	}
+
+	// Try both sanitized and original name
+	sanitizedName := SanitizeForFilename(name)
+	shellExt := GetShellExtension()
+
+	// Remove file with sanitized name
+	sanitizedPath := filepath.Join(binDir, sanitizedName+shellExt)
+	if err := os.Remove(sanitizedPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove shortcut function file: %w", err)
+	}
+
+	// If sanitized name differs from original, also try original name
+	if sanitizedName != name {
+		originalPath := filepath.Join(binDir, name+shellExt)
+		if err := os.Remove(originalPath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove shortcut function file: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// SyncShortcuts updates all shortcuts to match global named scripts in config
+func SyncShortcuts(config Config) error {
+	binDir, err := GetBinDir()
+	if err != nil {
+		return fmt.Errorf("failed to get bin directory: %w", err)
+	}
+
+	// Create bin directory if it doesn't exist
+	if err := os.MkdirAll(binDir, 0755); err != nil {
+		return fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	// Collect all existing shortcut files
+	existingShortcuts := make(map[string]bool)
+	if entries, err := os.ReadDir(binDir); err == nil {
+		shellExt := GetShellExtension()
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), shellExt) {
+				// Remove extension to get the name
+				name := strings.TrimSuffix(entry.Name(), shellExt)
+				existingShortcuts[name] = true
+			}
+		}
+	}
+
+	// Track which shortcuts should exist
+	shouldExist := make(map[string]bool)
+
+	// Create shortcuts for all global named scripts
+	if globalScripts, exists := config["global"]; exists {
+		for _, script := range globalScripts {
+			if script.Name != "" {
+				shouldExist[script.Name] = true
+				shouldExist[SanitizeForFilename(script.Name)] = true // Also track sanitized version
+				
+				if err := CreateShortcutFunction(script.Name); err != nil {
+					return fmt.Errorf("failed to create shortcut for '%s': %w", script.Name, err)
+				}
+			}
+		}
+	}
+
+	// Remove shortcuts that shouldn't exist anymore
+	shellExt := GetShellExtension()
+	for existingName := range existingShortcuts {
+		if !shouldExist[existingName] {
+			filePath := filepath.Join(binDir, existingName+shellExt)
+			if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("failed to remove obsolete shortcut '%s': %w", existingName, err)
+			}
+		}
+	}
+
+	return nil
+}
