@@ -229,9 +229,36 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 		return fmt.Errorf("failed to process arguments: %w", err)
 	}
 
-	// Handle missing arguments by prompting user
-	if len(result.MissingArgs) > 0 {
-		formResult, err := tui.RunPlaceholderForm(result.MissingArgs)
+	// Check if script has any placeholders
+	hasPlaceholders := len(result.Placeholders) > 0
+	
+	// Always show PlaceholderForm if script has placeholders
+	if hasPlaceholders {
+		// Create a list of all placeholders for the form, including those already provided
+		var allPlaceholders []args.PlaceholderValue
+		placeholderOrder := processor.GetPlaceholderOrder()
+		
+		for _, name := range placeholderOrder {
+			if placeholder, exists := result.Placeholders[name]; exists {
+				// Set the default value to the provided value if available, otherwise use the original default
+				if placeholder.Provided && placeholder.Value != "" {
+					placeholder.DefaultValue = placeholder.Value
+				}
+				allPlaceholders = append(allPlaceholders, placeholder)
+			}
+		}
+		
+		// If no order found, use placeholders from result
+		if len(allPlaceholders) == 0 {
+			for _, placeholder := range result.Placeholders {
+				if placeholder.Provided && placeholder.Value != "" {
+					placeholder.DefaultValue = placeholder.Value
+				}
+				allPlaceholders = append(allPlaceholders, placeholder)
+			}
+		}
+		
+		formResult, err := tui.RunPlaceholderForm(allPlaceholders)
 		if err != nil {
 			return fmt.Errorf("failed to collect placeholder values: %w", err)
 		}
@@ -240,10 +267,8 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 			return fmt.Errorf("operation cancelled by user")
 		}
 		
-		missingValues := formResult.Values
-
-		// Update result with prompted values
-		for name, value := range missingValues {
+		// Update result with form values (user may have modified them)
+		for name, value := range formResult.Values {
 			if placeholder, exists := result.Placeholders[name]; exists {
 				placeholder.Value = value
 				placeholder.Provided = true
@@ -252,7 +277,6 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 		}
 
 		// Check if script has positional placeholders
-		processor := args.NewArgumentProcessor(matchResult.Script)
 		hasPositional, err := processor.HasPositionalPlaceholders()
 		if err != nil {
 			return fmt.Errorf("failed to check placeholder types: %w", err)
@@ -262,10 +286,10 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 		var additionalArgs []string
 		if hasPositional {
 			// For positional scripts, convert named values to positional arguments
-			additionalArgs = convertToPositionalArgs(missingValues, result.MissingArgs)
+			additionalArgs = convertToPositionalArgs(formResult.Values, allPlaceholders)
 		} else {
 			// For named scripts, convert to named arguments
-			additionalArgs = convertToArgs(missingValues)
+			additionalArgs = convertToArgs(formResult.Values)
 		}
 
 		newResult, err := processor.ProcessArguments(append(scriptArgs, additionalArgs...))

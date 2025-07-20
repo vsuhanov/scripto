@@ -259,6 +259,11 @@ func (p *ArgumentProcessor) extractPlaceholderInfo() (map[string]PlaceholderValu
 	return placeholders, nil
 }
 
+// GetPlaceholderOrder returns the order of placeholders as they appear in the command (public method)
+func (p *ArgumentProcessor) GetPlaceholderOrder() []string {
+	return p.getPlaceholderOrder()
+}
+
 // getPlaceholderOrder returns the order of placeholders as they appear in the command
 func (p *ArgumentProcessor) getPlaceholderOrder() []string {
 	var order []string
