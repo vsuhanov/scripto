@@ -254,7 +254,7 @@ func (h HistoryPopup) View() string {
 	// Show error message if any
 	if h.errorMessage != "" {
 		errorText := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
+			Foreground(Colors.Error).
 			Render(fmt.Sprintf("Error: %s", h.errorMessage))
 		content = errorText + "\n\nPress any key to continue with empty command..."
 	} else if h.list.Items() == nil || len(h.list.Items()) == 0 {
@@ -266,7 +266,7 @@ func (h HistoryPopup) View() string {
 		
 		// Add help text
 		helpText := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244")).
+			Foreground(Colors.MutedText).
 			Render("Enter: select • s: skip history • Esc: cancel")
 		
 		content = listContent + "\n\n" + helpText

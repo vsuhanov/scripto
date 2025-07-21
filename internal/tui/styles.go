@@ -10,22 +10,22 @@ import (
 
 var (
 	// Base colors
-	primaryColor   = lipgloss.Color("#6366f1")
-	secondaryColor = lipgloss.Color("#64748b")
-	accentColor    = lipgloss.Color("#06b6d4")
-	errorColor     = lipgloss.Color("#ef4444")
-	successColor   = lipgloss.Color("#10b981")
-	warningColor   = lipgloss.Color("#f59e0b")
+	primaryColor   = Colors.Primary
+	secondaryColor = Colors.Secondary
+	accentColor    = Colors.Accent
+	errorColor     = Colors.Error
+	successColor   = Colors.Success
+	warningColor   = Colors.Warning
 
 	// Background colors
-	bgColor         = lipgloss.Color("#1e293b")
-	selectedBgColor = lipgloss.Color("#334155")
-	borderColor     = lipgloss.Color("#475569")
+	bgColor         = Colors.Background
+	selectedBgColor = Colors.SelectedBackground
+	borderColor     = Colors.Border
 
 	// Text colors
-	textColor         = lipgloss.Color("#f8fafc")
-	mutedTextColor    = lipgloss.Color("#94a3b8")
-	selectedTextColor = lipgloss.Color("#ffffff")
+	textColor         = Colors.Text
+	mutedTextColor    = Colors.MutedText
+	selectedTextColor = Colors.SelectedText
 
 	// Main container style
 	ContainerStyle = lipgloss.NewStyle().
@@ -66,7 +66,7 @@ var (
 
 	PreviewCommandStyle = lipgloss.NewStyle().
 				Foreground(accentColor).
-				Background(lipgloss.Color("#0f172a")).
+				Background(Colors.CommandBackground).
 				Padding(0, 1).
 				Margin(1, 0)
 
@@ -92,7 +92,7 @@ var (
 	// Status bar styles
 	StatusStyle = lipgloss.NewStyle().
 			Background(primaryColor).
-			Foreground(lipgloss.Color("#ffffff")).
+			Foreground(Colors.White).
 			Padding(0, 1)
 
 	ErrorStyle = lipgloss.NewStyle().
@@ -121,27 +121,35 @@ var (
 
 	FieldInputStyle = lipgloss.NewStyle().
 			Foreground(textColor).
-			Background(lipgloss.Color("#374151")).
+			Background(Colors.InputBackground).
 			Padding(0, 1).
-			Margin(0, 0, 1, 0)
+			Margin(0, 0, 1, 0).
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(Colors.InputBorder)
 
 	FieldInputFocusedStyle = lipgloss.NewStyle().
 				Foreground(selectedTextColor).
 				Background(primaryColor).
 				Padding(0, 1).
-				Margin(0, 0, 1, 0)
+				Margin(0, 0, 1, 0).
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(Colors.InputBorderFocused)
 
 	TextAreaStyle = lipgloss.NewStyle().
 			Foreground(textColor).
-			Background(lipgloss.Color("#374151")).
+			Background(Colors.InputBackground).
 			Padding(1).
-			Margin(0, 0, 1, 0)
+			Margin(0, 0, 1, 0).
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(Colors.InputBorder)
 
 	TextAreaFocusedStyle = lipgloss.NewStyle().
 				Foreground(selectedTextColor).
 				Background(primaryColor).
 				Padding(1).
-				Margin(0, 0, 1, 0)
+				Margin(0, 0, 1, 0).
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(Colors.InputBorderFocused)
 
 	CheckboxStyle = lipgloss.NewStyle().
 			Foreground(textColor)

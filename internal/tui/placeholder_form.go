@@ -31,17 +31,17 @@ type PlaceholderFormResult struct {
 // NewPlaceholderForm creates a new placeholder collection form
 func NewPlaceholderForm(placeholders []args.PlaceholderValue) PlaceholderFormModel {
 	inputs := make([]textinput.Model, len(placeholders))
-	
+
 	for i, placeholder := range placeholders {
 		input := textinput.New()
 		input.Placeholder = placeholder.DefaultValue
 		input.Width = 50
-		
+
 		// Auto-focus first input
 		if i == 0 {
 			input.Focus()
 		}
-		
+
 		inputs[i] = input
 	}
 
@@ -67,11 +67,11 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "esc":
 			m.cancelled = true
 			return m, tea.Quit
-			
+
 		case "enter":
 			if m.buttonFocus == 1 { // Execute button focused
 				m.submitted = true
-				
+
 				// Collect all values
 				for i, placeholder := range m.placeholders {
 					value := m.inputs[i].Value()
@@ -80,7 +80,7 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.values[placeholder.Name] = value
 				}
-				
+
 				return m, tea.Quit
 			} else if m.buttonFocus == 2 { // Cancel button focused
 				m.cancelled = true
@@ -92,10 +92,10 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m.nextInput()
 			}
-			
+
 		case "tab", "down":
 			return m.nextFocus()
-			
+
 		case "shift+tab", "up":
 			return m.prevFocus()
 		}
@@ -107,7 +107,7 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
 		return m, cmd
 	}
-	
+
 	return m, nil
 }
 
@@ -118,16 +118,16 @@ func (m PlaceholderFormModel) View() string {
 	}
 
 	var b strings.Builder
-	
+
 	// Title
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("205")).
+		Foreground(Colors.Error).
 		MarginBottom(1)
-	
+
 	b.WriteString(titleStyle.Render("Enter Placeholder Values"))
 	b.WriteString("\n\n")
-	
+
 	// Input fields
 	for i, placeholder := range m.placeholders {
 		// Label
@@ -136,69 +136,70 @@ func (m PlaceholderFormModel) View() string {
 		if placeholder.IsPositional {
 			label = fmt.Sprintf("Argument %d", i+1)
 		}
-		
+
 		b.WriteString(labelStyle.Render(label))
-		
+
 		// Description
 		if placeholder.Description != "" {
 			descStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("241")).
+				Foreground(Colors.MutedText).
 				Italic(true)
+
 			b.WriteString(" ")
 			b.WriteString(descStyle.Render(fmt.Sprintf("(%s)", placeholder.Description)))
 		}
-		
+
 		b.WriteString("\n")
-		
+
 		// Input field
-		inputStyle := lipgloss.NewStyle().MarginBottom(1)
+		inputStyle := lipgloss.NewStyle().MarginBottom(1).BorderStyle(lipgloss.RoundedBorder()).BorderForeground(Colors.InputBorder)
 		if i == m.focused && m.buttonFocus == 0 {
-			inputStyle = inputStyle.BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("62"))
+			inputStyle = inputStyle.
+				BorderForeground(Colors.InputBorderFocused)
 		}
-		
+
 		b.WriteString(inputStyle.Render(m.inputs[i].View()))
 		b.WriteString("\n")
 	}
-	
+
 	// Buttons
 	b.WriteString("\n")
 	executeStyle := lipgloss.NewStyle().
 		Padding(0, 2).
 		Margin(0, 1).
-		Background(lipgloss.Color("34")).
-		Foreground(lipgloss.Color("255"))
-		
+		Background(Colors.PrimaryButtonBackground).
+		Foreground(Colors.PrimaryButtonForeground)
+
 	cancelStyle := lipgloss.NewStyle().
 		Padding(0, 2).
 		Margin(0, 1).
-		Background(lipgloss.Color("196")).
-		Foreground(lipgloss.Color("255"))
-	
+		Background(Colors.DangerButtonBackground).
+		Foreground(Colors.DangerButtonForeground).
+    BorderStyle(lipgloss.RoundedBorder())
+
 	// Highlight focused button
 	if m.buttonFocus == 1 {
-		executeStyle = executeStyle.BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62"))
+		executeStyle = executeStyle.Background(Colors.DangerButtonBackground)
 	}
 	if m.buttonFocus == 2 {
 		cancelStyle = cancelStyle.BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62"))
+			BorderForeground(Colors.PrimaryButtonBorder)
 	}
-	
+
 	executeButton := executeStyle.Render("Execute")
 	cancelButton := cancelStyle.Render("Cancel")
-	
+
 	buttonsRow := lipgloss.JoinHorizontal(lipgloss.Left, executeButton, cancelButton)
 	b.WriteString(buttonsRow)
 	b.WriteString("\n\n")
-	
+
 	// Instructions
 	instructionStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("241")).
+		Foreground(Colors.MutedText).
 		MarginTop(1)
-	
+
 	b.WriteString(instructionStyle.Render("Tab/↓: Next • Shift+Tab/↑: Previous • Enter: Activate • Esc: Cancel"))
-	
+
 	return b.String()
 }
 
@@ -278,15 +279,16 @@ func RunPlaceholderForm(placeholders []args.PlaceholderValue) (PlaceholderFormRe
 
 	model := NewPlaceholderForm(placeholders)
 	p := tea.NewProgram(model)
-	
+
 	finalModel, err := p.Run()
 	if err != nil {
 		return PlaceholderFormResult{}, err
 	}
-	
+
 	if m, ok := finalModel.(PlaceholderFormModel); ok {
 		return m.GetResult(), nil
 	}
-	
+
 	return PlaceholderFormResult{Cancelled: true}, nil
 }
+
