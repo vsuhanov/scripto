@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -246,57 +245,52 @@ func (h *HistoryScreen) View() string {
 		Render(content)
 }
 
-// loadHistory loads command history from shell
+// loadHistory loads command history from shell wrapper file
 func (h *HistoryScreen) loadHistory() tea.Cmd {
 	return func() tea.Msg {
-		homeDir, err := os.UserHomeDir()
+		// Check if shell history file path is provided
+		historyFilePath := os.Getenv("SCRIPTO_SHELL_HISTORY_FILE_PATH")
+		if historyFilePath == "" {
+			return historyLoadedMsg{items: []list.Item{}}
+		}
+
+		// Try to read the history file
+		content, err := os.ReadFile(historyFilePath)
 		if err != nil {
 			return historyLoadedMsg{items: []list.Item{}}
 		}
 
-		historyFile := filepath.Join(homeDir, ".zsh_history")
-		if _, err := os.Stat(historyFile); os.IsNotExist(err) {
-			// Try bash history as fallback
-			historyFile = filepath.Join(homeDir, ".bash_history")
-			if _, err := os.Stat(historyFile); os.IsNotExist(err) {
-				return historyLoadedMsg{items: []list.Item{}}
-			}
-		}
-
-		// Read history file
-		content, err := os.ReadFile(historyFile)
-		if err != nil {
-			return historyLoadedMsg{items: []list.Item{}}
-		}
-
-		// Parse history entries
+		// Parse fc output (same format as the removed popup)
+		lines := strings.Split(strings.TrimSpace(string(content)), "\n")
 		var commands []string
-		lines := strings.Split(string(content), "\n")
-		
-		// For zsh history, entries might be in format ": timestamp:duration;command"
+
 		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
+			// Skip empty lines
+			if strings.TrimSpace(line) == "" {
 				continue
 			}
 
-			// Handle zsh extended history format
-			if strings.HasPrefix(line, ":") {
-				if parts := strings.SplitN(line, ";", 2); len(parts) == 2 {
-					line = parts[1]
-				}
-			}
-
-			// Skip duplicates and empty commands
-			if line != "" && !contains(commands, line) {
-				commands = append(commands, line)
+			// fc output format: "  123  command here"
+			// We need to strip the line number and leading spaces
+			parts := strings.SplitN(strings.TrimSpace(line), " ", 2)
+			if len(parts) >= 2 {
+				command := parts[1]
+				// Replace \\n with actual newlines for multiline commands
+				command = strings.ReplaceAll(command, "\\n", "\n")
+				commands = append(commands, command)
 			}
 		}
 
-		// Convert to list items (reverse order to show recent first)
-		var items []list.Item
-		for i := len(commands) - 1; i >= 0 && len(items) < 100; i-- {
-			items = append(items, commandItem{command: commands[i]})
+		// Reverse to show most recent first
+		for i := len(commands)/2 - 1; i >= 0; i-- {
+			opp := len(commands) - 1 - i
+			commands[i], commands[opp] = commands[opp], commands[i]
+		}
+
+		// Convert to list items
+		items := make([]list.Item, len(commands))
+		for i, command := range commands {
+			items[i] = commandItem{command: command}
 		}
 
 		return historyLoadedMsg{items: items}

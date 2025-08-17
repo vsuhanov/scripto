@@ -166,4 +166,13 @@ Each Script object contains:
 ## Testing Safety
 - **ALWAYS** use SCRIPTO_CONFIG environment variable for testing
 - **NEVER** modify or touch ~/.scripto/* directory during development
-- Use test fixtures in test/ directory for any test data needed 
+- Use test fixtures in test/ directory for any test data needed
+
+## Environment Variables
+
+### SCRIPTO_SHELL_HISTORY_FILE_PATH
+- **Purpose**: Source of truth for command history in TUI screens
+- **Usage**: Shell wrapper sets this to provide command history to history selection screens
+- **Format**: File contains fc output format: "  123  command here" with line numbers
+- **Important**: ALL history screens MUST read from this variable, not directly from shell history files
+- **Implementation**: Used by `internal/tui/history_screen.go` for consistent history access 
