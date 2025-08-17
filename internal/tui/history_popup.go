@@ -8,34 +8,33 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
-// commandItem represents a command history item for the list
-type commandItem struct {
+// popupCommandItem represents a command history item for the list
+type popupCommandItem struct {
 	command string
 }
 
 // FilterValue returns the string used for filtering
-func (i commandItem) FilterValue() string { return i.command }
+func (i popupCommandItem) FilterValue() string { return i.command }
 
 // Title returns the title of the command
-func (i commandItem) Title() string {
+func (i popupCommandItem) Title() string {
 	// Replace newlines with ↵ for display
 	return strings.ReplaceAll(i.command, "\n", "↵")
 }
 
 // Description returns the description (empty for commands)
-func (i commandItem) Description() string { return "" }
+func (i popupCommandItem) Description() string { return "" }
 
-// customDelegate provides a compact, single-line display for commands
-type customDelegate struct{}
+// popupCustomDelegate provides a compact, single-line display for commands
+type popupCustomDelegate struct{}
 
-func (d customDelegate) Height() int                               { return 1 }
-func (d customDelegate) Spacing() int                              { return 0 }
-func (d customDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
-func (d customDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(commandItem)
+func (d popupCustomDelegate) Height() int                               { return 1 }
+func (d popupCustomDelegate) Spacing() int                              { return 0 }
+func (d popupCustomDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
+func (d popupCustomDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(popupCommandItem)
 	if !ok {
 		return
 	}
@@ -47,12 +46,9 @@ func (d customDelegate) Render(w io.Writer, m list.Model, index int, listItem li
 	}
 
 	// Style based on selection
-	style := lipgloss.NewStyle().PaddingLeft(2)
+	style := HistoryItemStyle
 	if index == m.Index() {
-		style = style.
-			Background(selectedBgColor).
-			Foreground(selectedTextColor).
-			Bold(true)
+		style = HistoryItemSelectedStyle
 	}
 
 	fmt.Fprint(w, style.Render(command))
@@ -71,7 +67,7 @@ type HistoryPopup struct {
 // NewHistoryPopup creates a new history popup
 func NewHistoryPopup(width, height int) HistoryPopup {
 	// Create the list with custom delegate
-	delegate := customDelegate{}
+	delegate := popupCustomDelegate{}
 	l := list.New([]list.Item{}, delegate, width-4, height-8)
 	l.Title = "Select Command from History"
 	l.SetShowStatusBar(false)
@@ -137,7 +133,7 @@ func (h HistoryPopup) LoadHistory() (HistoryPopup, tea.Cmd) {
 		// Convert to list items
 		items := make([]list.Item, len(commands))
 		for i, command := range commands {
-			items[i] = commandItem{command: command}
+			items[i] = popupCommandItem{command: command}
 		}
 
 		return HistoryLoadedMsg{
@@ -221,7 +217,7 @@ func (h HistoryPopup) handleKeyMsg(msg tea.KeyMsg) (HistoryPopup, tea.Cmd) {
 	case "enter":
 		// Get the selected item from the list
 		if selectedItem := h.list.SelectedItem(); selectedItem != nil {
-			if cmdItem, ok := selectedItem.(commandItem); ok {
+			if cmdItem, ok := selectedItem.(popupCommandItem); ok {
 				h.active = false
 				h.result = HistoryPopupResult{Command: cmdItem.command, Cancelled: false}
 				return h, tea.Quit
@@ -253,9 +249,7 @@ func (h HistoryPopup) View() string {
 
 	// Show error message if any
 	if h.errorMessage != "" {
-		errorText := lipgloss.NewStyle().
-			Foreground(Colors.Error).
-			Render(fmt.Sprintf("Error: %s", h.errorMessage))
+		errorText := ErrorStyle.Render(fmt.Sprintf("Error: %s", h.errorMessage))
 		content = errorText + "\n\nPress any key to continue with empty command..."
 	} else if h.list.Items() == nil || len(h.list.Items()) == 0 {
 		content = "Loading command history..."
@@ -265,9 +259,7 @@ func (h HistoryPopup) View() string {
 		listContent := h.list.View()
 		
 		// Add help text
-		helpText := lipgloss.NewStyle().
-			Foreground(Colors.MutedText).
-			Render("Enter: select • s: skip history • Esc: cancel")
+		helpText := HelpStyle.Render("Enter: select • s: skip history • Esc: cancel")
 		
 		content = listContent + "\n\n" + helpText
 	}

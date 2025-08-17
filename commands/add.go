@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strings"
 
-	"scripto/internal/services"
 	"scripto/internal/tui"
 
 	"github.com/spf13/cobra"
@@ -26,63 +25,55 @@ You can also add a script from an existing file using the --file flag:
 		filePath := cmd.Flag("file").Value.String()
 
 		// Check if both file and command arguments are provided
-		// When --file is specified, it provides the script content, but other flags like --name, --global are still valid
 		if filePath != "" && len(args) > 0 {
 			fmt.Printf("Error: Cannot specify both --file and command arguments\n")
 			os.Exit(1)
 		}
 
-		// Check if we have any command arguments or file
-		if len(args) == 0 && filePath == "" {
-			// No arguments - show history popup first, then launch ScriptEditor
-			historyResult, err := tui.RunHistoryPopup()
-			if err != nil {
-				fmt.Printf("Error running history popup: %v\n", err)
-				os.Exit(1)
-			}
-			
-			if historyResult.Cancelled {
-				return
-			}
-			
-			// Launch ScriptEditor with selected command from history
-			if err := launchScriptEditor(historyResult.Command, "", cmd); err != nil {
-				fmt.Printf("Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
+		// Prepare flow options
+		options := tui.AddFlowOptions{
+			Name:        cmd.Flag("name").Value.String(),
+			Description: cmd.Flag("description").Value.String(),
+			IsGlobal:    cmd.Flag("global").Changed,
 		}
-
-
-		var command string
-		var sourceFilePath string
 
 		if filePath != "" {
 			// Read command from file
-			var err error
-			command, sourceFilePath, _, err = readCommandFromFile(filePath)
+			command, sourceFilePath, _, err := readCommandFromFile(filePath)
 			if err != nil {
 				fmt.Printf("Error reading file: %v\n", err)
 				os.Exit(1)
 			}
-
-			// Launch ScriptEditor with pre-filled content
-			if err := launchScriptEditor(command, sourceFilePath, cmd); err != nil {
-				fmt.Printf("Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		} else {
+			options.Command = command
+			options.FilePath = sourceFilePath
+			options.SkipHistory = true
+		} else if len(args) > 0 {
 			// Use command from arguments
-			command = strings.Join(args, " ")
+			options.Command = strings.Join(args, " ")
+			options.SkipHistory = true
+		} else {
+			// No arguments - start with history selection
+			options.SkipHistory = false
 		}
 
-		// Launch ScriptEditor with the command arguments
-		if err := launchScriptEditor(command, "", cmd); err != nil {
+		// Create and run the add flow controller
+		flowController, err := tui.NewAddFlowController(options)
+		if err != nil {
+			fmt.Printf("Failed to create flow controller: %v\n", err)
+			os.Exit(1)
+		}
+
+		result, err := flowController.Run()
+		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
 
+		if result.ExitCode == 0 {
+			fmt.Printf("Script added successfully\n")
+		}
+
+		os.Exit(result.ExitCode)
 	},
 }
 
@@ -149,70 +140,6 @@ func readCommandFromFile(filePath string) (string, string, string, error) {
 }
 
 
-// launchScriptEditor launches the ScriptEditor for adding a new script
-func launchScriptEditor(command, filePath string, cmd *cobra.Command) error {
-	// Create script service
-	service, err := services.NewScriptService()
-	if err != nil {
-		return fmt.Errorf("failed to create script service: %w", err)
-	}
-
-	// Create new script with defaults
-	script := service.CreateEmptyScript()
-
-	// Apply command-line values
-	if name := cmd.Flag("name").Value.String(); name != "" {
-		script.Name = name
-	}
-	if desc := cmd.Flag("description").Value.String(); desc != "" {
-		script.Description = desc
-	}
-	// Set scope based on global flag
-	if cmd.Flag("global").Changed {
-		script.Scope = "global"
-	} else {
-		// Use current directory scope if not global
-		script.Scope = service.GetCurrentDirectoryScope()
-	}
-
-	if filePath != "" {
-		script.FilePath = filePath
-	}
-
-	// If we have a command but no file, create a temporary file for editing
-	if command != "" && filePath == "" {
-		// Create a temporary script file for the command
-		tempFilePath, err := service.CreateTempScriptFile(command)
-		if err != nil {
-			return fmt.Errorf("failed to create temp script file: %w", err)
-		}
-		script.FilePath = tempFilePath
-	}
-
-	// Run the script editor
-	result, err := tui.RunScriptEditor(script, true)
-	if err != nil {
-		return fmt.Errorf("TUI error: %w", err)
-	}
-
-	if result.Cancelled {
-		return nil
-	}
-
-	// Use provided command or command from editor
-	finalCommand := command
-	if finalCommand == "" {
-		finalCommand = result.Command
-	}
-
-	// Save the script using the service
-	if err := service.SaveScript(result.Script, finalCommand, nil); err != nil {
-		return fmt.Errorf("failed to save script: %w", err)
-	}
-
-	fmt.Printf("Script added successfully\n")
-	return nil
-}
 
 func init() {
 	rootCmd.AddCommand(addCmd)

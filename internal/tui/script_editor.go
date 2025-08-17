@@ -2,8 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"log"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -14,12 +14,6 @@ import (
 	"scripto/entities"
 )
 
-// ScriptEditorResult represents the result of the script editor
-type ScriptEditorResult struct {
-	Script    entities.Script
-	Command   string
-	Cancelled bool
-}
 
 // ScriptEditor represents the unified script editing component
 type ScriptEditor struct {
@@ -100,7 +94,7 @@ func NewScriptEditor(script entities.Script, isNewScript bool, width, height int
 		}
 	}
 
-	return ScriptEditor{
+	editor := ScriptEditor{
 		nameInput:        nameInput,
 		descriptionInput: descriptionInput,
 		commandTextarea:  commandTextarea,
@@ -112,6 +106,11 @@ func NewScriptEditor(script entities.Script, isNewScript bool, width, height int
 		width:            width,
 		height:           height,
 	}
+	
+	// Ensure initial focus state is valid
+	(&editor).validateAndUpdateFocus()
+	
+	return editor
 }
 
 // Update handles script editor events
@@ -122,19 +121,37 @@ func (e ScriptEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle navigation keys first
+		log.Printf("[ScriptEditor] Update received key: %s", msg.String())
+		// Handle global navigation and escape keys first
 		switch msg.String() {
 		case "tab", "shift+tab", "esc":
-			return e.handleKeyMsg(msg)
+			log.Printf("[ScriptEditor] Delegating to handleKeyMsg: %s", msg.String())
+			return (&e).handleKeyMsg(msg)
 		case "enter":
-			// Only handle enter for non-input fields
+			// Handle enter for buttons, but let input fields handle it themselves
 			if e.focusedField == EditorFieldSave || e.focusedField == EditorFieldCancel {
-				return e.handleKeyMsg(msg)
+				return (&e).handleKeyMsg(msg)
 			}
+			// For input fields, fall through to let them handle enter
 		}
+		
+		// Pass other keys to the focused component first
+		var cmd tea.Cmd
+		switch e.focusedField {
+		case EditorFieldName:
+			e.nameInput, cmd = e.nameInput.Update(msg)
+		case EditorFieldDescription:
+			e.descriptionInput, cmd = e.descriptionInput.Update(msg)
+		case EditorFieldCommand:
+			e.commandTextarea, cmd = e.commandTextarea.Update(msg)
+		case EditorFieldScope:
+			e.scopeInput, cmd = e.scopeInput.Update(msg)
+		}
+		
+		return e, cmd
 	}
 
-	// Update the focused component
+	// For non-KeyMsg events, still update the focused component
 	var cmd tea.Cmd
 	switch e.focusedField {
 	case EditorFieldName:
@@ -151,20 +168,27 @@ func (e ScriptEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // handleKeyMsg handles keyboard input for the editor
-func (e ScriptEditor) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (e *ScriptEditor) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	log.Printf("[ScriptEditor] handleKeyMsg: key=%s, currentFocus=%d, active=%t", msg.String(), e.focusedField, e.active)
+	
 	switch msg.String() {
 	case "esc":
+		log.Printf("[ScriptEditor] ESC pressed, deactivating editor")
 		e.active = false
 		return e, tea.Quit
 
 	case "tab":
+		oldFocus := e.focusedField
 		e.focusedField = (e.focusedField + 1) % EditorFieldCount
-		(&e).updateFocus()
+		log.Printf("[ScriptEditor] TAB pressed, focus: %d -> %d", oldFocus, e.focusedField)
+		e.validateAndUpdateFocus()
 		return e, nil
 
 	case "shift+tab":
+		oldFocus := e.focusedField
 		e.focusedField = (e.focusedField - 1 + EditorFieldCount) % EditorFieldCount
-		(&e).updateFocus()
+		log.Printf("[ScriptEditor] SHIFT+TAB pressed, focus: %d -> %d", oldFocus, e.focusedField)
+		e.validateAndUpdateFocus()
 		return e, nil
 
 	case "enter":
@@ -183,6 +207,8 @@ func (e ScriptEditor) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateFocus updates the focus state of all components
 func (e *ScriptEditor) updateFocus() {
+	log.Printf("[ScriptEditor] updateFocus: focusing field %d", e.focusedField)
+	
 	e.nameInput.Blur()
 	e.descriptionInput.Blur()
 	e.commandTextarea.Blur()
@@ -190,14 +216,37 @@ func (e *ScriptEditor) updateFocus() {
 
 	switch e.focusedField {
 	case EditorFieldName:
+		log.Printf("[ScriptEditor] Focusing name input")
 		e.nameInput.Focus()
 	case EditorFieldDescription:
+		log.Printf("[ScriptEditor] Focusing description input")
 		e.descriptionInput.Focus()
 	case EditorFieldCommand:
+		log.Printf("[ScriptEditor] Focusing command textarea")
 		e.commandTextarea.Focus()
 	case EditorFieldScope:
+		log.Printf("[ScriptEditor] Focusing scope input")
 		e.scopeInput.Focus()
+	default:
+		log.Printf("[ScriptEditor] No component focused (field %d)", e.focusedField)
 	}
+}
+
+// validateAndUpdateFocus validates the focused field and updates focus state
+func (e *ScriptEditor) validateAndUpdateFocus() {
+	oldFocus := e.focusedField
+	
+	// Ensure focused field is within valid bounds
+	if e.focusedField < 0 {
+		e.focusedField = 0
+	} else if e.focusedField >= EditorFieldCount {
+		e.focusedField = EditorFieldCount - 1
+	}
+	
+	log.Printf("[ScriptEditor] validateAndUpdateFocus: %d -> %d (bounds: 0-%d)", oldFocus, e.focusedField, EditorFieldCount-1)
+	
+	// Update focus state
+	e.updateFocus()
 }
 
 // GetResult returns the editor result
@@ -280,7 +329,15 @@ func (e ScriptEditor) View() string {
 		cmdLabel = FieldLabelStyle.Foreground(primaryColor).Render("Command:")
 	}
 	sections = append(sections, cmdLabel)
-	sections = append(sections, e.commandTextarea.View())
+	
+	// Apply focused/unfocused styling to textarea
+	textareaView := e.commandTextarea.View()
+	if e.focusedField == EditorFieldCommand {
+		textareaView = TextAreaFocusedStyle.Render(textareaView)
+	} else {
+		textareaView = TextAreaStyle.Render(textareaView)
+	}
+	sections = append(sections, textareaView)
 
 	// Scope field
 	scopeLabel := FieldLabelStyle.Render("Scope (directory path or 'global'):")
@@ -322,23 +379,9 @@ func (e ScriptEditor) renderButtons(width int) string {
 	cancel := cancelStyle.Render("Cancel")
 
 	buttons := lipgloss.JoinHorizontal(lipgloss.Top, save, "  ", cancel)
-	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(buttons)
+	return ButtonContainerStyle.Width(width).Render(buttons)
 }
 
-// ParsePlaceholders extracts placeholders in the format %variable:description% from a command
-func ParsePlaceholders(command string) []string {
-	re := regexp.MustCompile(`%([^:%]+):[^%]*%`)
-	matches := re.FindAllStringSubmatch(command, -1)
-
-	placeholders := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if len(match) > 1 {
-			placeholders = append(placeholders, match[1])
-		}
-	}
-
-	return placeholders
-}
 
 // RunScriptEditor runs the script editor TUI and returns the result
 func RunScriptEditor(script entities.Script, isNewScript bool) (ScriptEditorResult, error) {
@@ -347,6 +390,7 @@ func RunScriptEditor(script entities.Script, isNewScript bool) (ScriptEditorResu
 
 	finalModel, err := program.Run()
 	if err != nil {
+    log.Printf("TUI error: %s", err)
 		return ScriptEditorResult{Cancelled: true}, fmt.Errorf("TUI error: %w", err)
 	}
 

@@ -47,9 +47,6 @@ type MainModel struct {
 
 // Messages for the TUI
 type (
-	ScriptsLoadedMsg  []script.MatchResult
-	ErrorMsg          error
-	StatusMsg         string
 	ExitWithScriptMsg string
 	ExitForEditMsg    string
 )
@@ -437,30 +434,6 @@ Press ? again to return to the script list.
 		Render(help)
 }
 
-// loadScripts loads all available scripts
-func loadScripts() tea.Cmd {
-	return func() tea.Msg {
-		// Load configuration
-		configPath, err := storage.GetConfigPath()
-		if err != nil {
-			return ErrorMsg(fmt.Errorf("failed to get config path: %w", err))
-		}
-
-		config, err := storage.ReadConfig(configPath)
-		if err != nil {
-			return ErrorMsg(fmt.Errorf("failed to read config: %w", err))
-		}
-
-		// Create matcher and find all scripts
-		matcher := script.NewMatcher(config)
-		scripts, err := matcher.FindAllScripts()
-		if err != nil {
-			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))
-		}
-
-		return ScriptsLoadedMsg(scripts)
-	}
-}
 
 // getScopeDisplayName returns a user-friendly display name for a scope
 func (m MainModel) getScopeDisplayName(scope string) string {

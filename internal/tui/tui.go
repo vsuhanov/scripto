@@ -38,14 +38,6 @@ func handleTUIResult(m MainModel) error {
 	return nil
 }
 
-// ActionType represents the type of action taken in the TUI
-type ActionType int
-
-const (
-	ActionNone ActionType = iota
-	ActionExecute
-	ActionEdit
-)
 
 // TUIResult represents the result of TUI interaction
 type TUIResult struct {
@@ -84,7 +76,7 @@ func RunWithResult() (TUIResult, error) {
 			}
 
 			return TUIResult{
-				Action:     ActionEdit,
+				Action:     ActionEditScriptExternal,
 				ScriptPath: scriptPath,
 				ExitCode:   4, // Special exit code for edit
 			}, nil
@@ -97,7 +89,7 @@ func RunWithResult() (TUIResult, error) {
 			// Return script path for execution
 			scriptPath := selected.Script.FilePath
 			return TUIResult{
-				Action:     ActionExecute,
+				Action:     ActionExecuteScript,
 				ScriptPath: scriptPath,
 				ExitCode:   0,
 			}, nil

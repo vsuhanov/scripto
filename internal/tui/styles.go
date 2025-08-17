@@ -157,6 +157,124 @@ var (
 	CheckboxCheckedStyle = lipgloss.NewStyle().
 				Foreground(successColor).
 				Bold(true)
+
+	// Button styles
+	PrimaryButtonStyle = lipgloss.NewStyle().
+			Padding(0, 2).
+			Margin(0, 1).
+			Background(Colors.PrimaryButtonBackground).
+			Foreground(Colors.PrimaryButtonForeground)
+
+	PrimaryButtonFocusedStyle = lipgloss.NewStyle().
+				Padding(0, 2).
+				Margin(0, 1).
+				Background(Colors.DangerButtonBackground).
+				Foreground(Colors.PrimaryButtonForeground)
+
+	DangerButtonStyle = lipgloss.NewStyle().
+			Padding(0, 2).
+			Margin(0, 1).
+			Background(Colors.DangerButtonBackground).
+			Foreground(Colors.DangerButtonForeground).
+			BorderStyle(lipgloss.RoundedBorder())
+
+	DangerButtonFocusedStyle = lipgloss.NewStyle().
+				Padding(0, 2).
+				Margin(0, 1).
+				Background(Colors.DangerButtonBackground).
+				Foreground(Colors.DangerButtonForeground).
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(Colors.PrimaryButtonBorder)
+
+	// Form title style
+	FormTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(Colors.Error).
+			MarginBottom(1)
+
+	// Description text style
+	DescriptionStyle = lipgloss.NewStyle().
+			Foreground(Colors.MutedText).
+			Italic(true)
+
+	// Input styles for placeholders
+	PlaceholderInputStyle = lipgloss.NewStyle().
+			MarginBottom(1).
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(Colors.InputBorder)
+
+	PlaceholderInputFocusedStyle = lipgloss.NewStyle().
+				MarginBottom(1).
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(Colors.InputBorderFocused)
+
+	// Instruction style
+	InstructionStyle = lipgloss.NewStyle().
+			Foreground(Colors.MutedText).
+			MarginTop(1)
+
+	// History list item style
+	HistoryItemStyle = lipgloss.NewStyle().
+			PaddingLeft(2)
+
+	HistoryItemSelectedStyle = lipgloss.NewStyle().
+				PaddingLeft(2).
+				Background(selectedBgColor).
+				Foreground(selectedTextColor).
+				Bold(true)
+
+	// Button container centering style
+	ButtonContainerStyle = lipgloss.NewStyle().
+				Align(lipgloss.Center)
+
+	// Additional styles for main list screen
+	TitleStyle = lipgloss.NewStyle().
+			Foreground(primaryColor).
+			Bold(true)
+
+	LoadingStyle = lipgloss.NewStyle().
+			Foreground(mutedTextColor).
+			Align(lipgloss.Center)
+
+	HeaderStyle = lipgloss.NewStyle().
+			Background(primaryColor).
+			Foreground(Colors.White).
+			Padding(0, 1)
+
+	ListFocusedStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(primaryColor).
+			Padding(0, 1)
+
+	PreviewFocusedStyle = lipgloss.NewStyle().
+			BorderStyle(lipgloss.RoundedBorder()).
+			BorderForeground(primaryColor).
+			Padding(1)
+
+	FooterStyle = lipgloss.NewStyle().
+			Background(borderColor).
+			Foreground(textColor).
+			Padding(0, 1)
+
+	HelpScreenStyle = lipgloss.NewStyle().
+			Padding(2).
+			Background(bgColor).
+			Foreground(textColor)
+
+	ListItemStyle = lipgloss.NewStyle().
+			Foreground(textColor).
+			Padding(0, 1)
+
+	ListItemSelectedStyle = lipgloss.NewStyle().
+			Background(selectedBgColor).
+			Foreground(selectedTextColor).
+			Bold(true).
+			Padding(0, 1)
+
+	NoScriptsStyle = lipgloss.NewStyle().
+			Foreground(mutedTextColor).
+			Italic(true).
+			Align(lipgloss.Center)
 )
 
 // GetScopeStyle returns the appropriate style for a script scope

@@ -120,42 +120,31 @@ func (m PlaceholderFormModel) View() string {
 	var b strings.Builder
 
 	// Title
-	titleStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(Colors.Error).
-		MarginBottom(1)
-
-	b.WriteString(titleStyle.Render("Enter Placeholder Values"))
+	b.WriteString(FormTitleStyle.Render("Enter Placeholder Values"))
 	b.WriteString("\n\n")
 
 	// Input fields
 	for i, placeholder := range m.placeholders {
 		// Label
-		labelStyle := lipgloss.NewStyle().Bold(true)
 		label := placeholder.Name
 		if placeholder.IsPositional {
 			label = fmt.Sprintf("Argument %d", i+1)
 		}
 
-		b.WriteString(labelStyle.Render(label))
+		b.WriteString(FieldLabelStyle.Render(label))
 
 		// Description
 		if placeholder.Description != "" {
-			descStyle := lipgloss.NewStyle().
-				Foreground(Colors.MutedText).
-				Italic(true)
-
 			b.WriteString(" ")
-			b.WriteString(descStyle.Render(fmt.Sprintf("(%s)", placeholder.Description)))
+			b.WriteString(DescriptionStyle.Render(fmt.Sprintf("(%s)", placeholder.Description)))
 		}
 
 		b.WriteString("\n")
 
 		// Input field
-		inputStyle := lipgloss.NewStyle().MarginBottom(1).BorderStyle(lipgloss.RoundedBorder()).BorderForeground(Colors.InputBorder)
+		inputStyle := PlaceholderInputStyle
 		if i == m.focused && m.buttonFocus == 0 {
-			inputStyle = inputStyle.
-				BorderForeground(Colors.InputBorderFocused)
+			inputStyle = PlaceholderInputFocusedStyle
 		}
 
 		b.WriteString(inputStyle.Render(m.inputs[i].View()))
@@ -164,26 +153,15 @@ func (m PlaceholderFormModel) View() string {
 
 	// Buttons
 	b.WriteString("\n")
-	executeStyle := lipgloss.NewStyle().
-		Padding(0, 2).
-		Margin(0, 1).
-		Background(Colors.PrimaryButtonBackground).
-		Foreground(Colors.PrimaryButtonForeground)
-
-	cancelStyle := lipgloss.NewStyle().
-		Padding(0, 2).
-		Margin(0, 1).
-		Background(Colors.DangerButtonBackground).
-		Foreground(Colors.DangerButtonForeground).
-    BorderStyle(lipgloss.RoundedBorder())
+	executeStyle := PrimaryButtonStyle
+	cancelStyle := DangerButtonStyle
 
 	// Highlight focused button
 	if m.buttonFocus == 1 {
-		executeStyle = executeStyle.Background(Colors.DangerButtonBackground)
+		executeStyle = PrimaryButtonFocusedStyle
 	}
 	if m.buttonFocus == 2 {
-		cancelStyle = cancelStyle.BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(Colors.PrimaryButtonBorder)
+		cancelStyle = DangerButtonFocusedStyle
 	}
 
 	executeButton := executeStyle.Render("Execute")
@@ -194,11 +172,7 @@ func (m PlaceholderFormModel) View() string {
 	b.WriteString("\n\n")
 
 	// Instructions
-	instructionStyle := lipgloss.NewStyle().
-		Foreground(Colors.MutedText).
-		MarginTop(1)
-
-	b.WriteString(instructionStyle.Render("Tab/↓: Next • Shift+Tab/↑: Previous • Enter: Activate • Esc: Cancel"))
+	b.WriteString(InstructionStyle.Render("Tab/↓: Next • Shift+Tab/↑: Previous • Enter: Activate • Esc: Cancel"))
 
 	return b.String()
 }

@@ -151,6 +151,10 @@ Each Script object contains:
 - **Process**: Update CHANGELOG.md → commit → tag → push tag
 - **Output**: GitHub release with binary, archive, checksums, and documentation
 
+## Development Best Practices
+
+- When needing to use a color ONLY use colors defined in the Colors in the internal/tui/colors.go files. 
+
 # Important Instructions for Claude Code
 
 ## Core Guidelines

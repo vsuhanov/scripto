@@ -29,45 +29,17 @@ Examples:
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
-			// No arguments - launch TUI
-			result, err := tui.RunWithResult()
+			// No arguments - launch TUI using RootFlowController
+			flowController, err := tui.NewRootFlowController()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Failed to create flow controller: %v\n", err)
 				os.Exit(1)
 			}
 
-			switch result.Action {
-			case tui.ActionExecute:
-				// Load configuration to find the script entity
-				configPath, err := storage.GetConfigPath()
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to get config path: %v\n", err)
-					os.Exit(1)
-				}
-
-				config, err := storage.ReadConfig(configPath)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to read config: %v\n", err)
-					os.Exit(1)
-				}
-
-				// Find the script in config by file path
-				matchResult, err := findScriptByFilePath(config, result.ScriptPath)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Failed to find script: %v\n", err)
-					os.Exit(1)
-				}
-
-				// Execute using the unified flow with no arguments
-				if err := executeFoundScript(matchResult, []string{}); err != nil {
-					fmt.Fprintf(os.Stderr, "Error executing script: %v\n", err)
-					os.Exit(1)
-				}
-			case tui.ActionEdit:
-				if err := writeScriptPathForEditor(result.ScriptPath); err != nil {
-					fmt.Fprintf(os.Stderr, "Error writing script path: %v\n", err)
-					os.Exit(1)
-				}
+			result, err := flowController.Run()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+				os.Exit(1)
 			}
 
 			os.Exit(result.ExitCode)
@@ -148,10 +120,10 @@ func parseScriptNameAndArgs(userArgs []string) (string, []string) {
 	// Script name is everything before --, args are everything after --
 	scriptNameParts := userArgs[:separatorIndex]
 	scriptArgs := userArgs[separatorIndex+1:]
-	
+
 	// Join script name parts with spaces (in case the script name itself has spaces)
 	scriptName := strings.Join(scriptNameParts, " ")
-	
+
 	return scriptName, scriptArgs
 }
 
@@ -190,7 +162,7 @@ func executeFoundScript(matchResult *script.MatchResult, scriptArgs []string) er
 	}
 
 	contentStr := string(content)
-	
+
 	// Check if this is an executable script (starts with shebang)
 	if strings.HasPrefix(contentStr, "#!") {
 		// Executable script - pass arguments directly, no placeholder processing
@@ -231,13 +203,13 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 
 	// Check if script has any placeholders
 	hasPlaceholders := len(result.Placeholders) > 0
-	
+
 	// Always show PlaceholderForm if script has placeholders
 	if hasPlaceholders {
 		// Create a list of all placeholders for the form, including those already provided
 		var allPlaceholders []args.PlaceholderValue
 		placeholderOrder := processor.GetPlaceholderOrder()
-		
+
 		for _, name := range placeholderOrder {
 			if placeholder, exists := result.Placeholders[name]; exists {
 				// Set the default value to the provided value if available, otherwise use the original default
@@ -247,7 +219,7 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 				allPlaceholders = append(allPlaceholders, placeholder)
 			}
 		}
-		
+
 		// If no order found, use placeholders from result
 		if len(allPlaceholders) == 0 {
 			for _, placeholder := range result.Placeholders {
@@ -257,16 +229,16 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 				allPlaceholders = append(allPlaceholders, placeholder)
 			}
 		}
-		
+
 		formResult, err := tui.RunPlaceholderForm(allPlaceholders)
 		if err != nil {
 			return fmt.Errorf("failed to collect placeholder values: %w", err)
 		}
-		
+
 		if formResult.Cancelled {
 			return fmt.Errorf("operation cancelled by user")
 		}
-		
+
 		// Update result with form values (user may have modified them)
 		for name, value := range formResult.Values {
 			if placeholder, exists := result.Placeholders[name]; exists {
@@ -303,7 +275,6 @@ func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []str
 	return executeFinalCommand(result.FinalCommand)
 }
 
-
 // handleNoMatch handles the case when no script matches
 func handleNoMatch(input string, config storage.Config, configPath string) error {
 	// Use TUI to create and save new script
@@ -325,7 +296,7 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 
 	// Launch the script editor with a custom prompt message
 	fmt.Printf("Command '%s' not found. Create new script?\n", input)
-	
+
 	result, err := tui.RunScriptEditor(scriptObj, true)
 	if err != nil {
 		return fmt.Errorf("TUI error: %w", err)
@@ -378,7 +349,6 @@ func convertToPositionalArgs(values map[string]string, missingArgs []args.Placeh
 	}
 	return arguments
 }
-
 
 // writeScriptPathForEditor writes the script path for editor use
 func writeScriptPathForEditor(scriptPath string) error {
@@ -586,7 +556,7 @@ func syncShortcutsQuietly() {
 	if err != nil {
 		return // Silently ignore initialization errors
 	}
-	
+
 	// Silently sync shortcuts - errors are ignored to avoid interfering with normal operation
 	_ = service.SyncShortcuts()
 }
