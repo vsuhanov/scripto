@@ -14,7 +14,7 @@ import (
 // RootFlowController manages the main application flow
 type RootFlowController struct {
 	*BaseFlowController
-	scriptService *services.ScriptService
+	scriptService  *services.ScriptService
 	mainListScreen *MainListScreen
 	scriptEditor   *ScriptEditorScreen
 	showingEditor  bool
@@ -270,7 +270,7 @@ func (fc *RootFlowController) findScriptByFilePath(config storage.Config, filePa
 // executeFoundScript executes a matched script using the executor
 func (fc *RootFlowController) executeFoundScript(matchResult *script.MatchResult, scriptArgs []string) error {
 	executor := execution.NewScriptExecutor()
-	
+
 	// Check if argument processing is needed
 	processingResult, err := executor.ProcessScriptArguments(matchResult, scriptArgs)
 	if err != nil {
@@ -307,3 +307,4 @@ func (fc *RootFlowController) writeScriptPathForEditor(scriptPath string) error 
 	fmt.Print(scriptPath)
 	return nil
 }
+

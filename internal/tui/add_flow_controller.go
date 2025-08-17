@@ -201,14 +201,8 @@ func (fc *AddFlowController) handleScriptEditorSave() error {
 		return fc.HandleScreenResult(ScreenResult{Action: ActionScriptEditorCancel})
 	}
 
-	// Determine final command
-	finalCommand := fc.selectedCommand
-	if finalCommand == "" {
-		finalCommand = fc.initialCommand
-	}
-	if finalCommand == "" {
-		finalCommand = editorResult.Command
-	}
+	// Use the command from the editor (whatever the user typed/edited)
+	finalCommand := editorResult.Command
 
 	// Save the script
 	if err := fc.scriptService.SaveScript(editorResult.Script, finalCommand, nil); err != nil {
