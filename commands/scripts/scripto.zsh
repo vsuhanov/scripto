@@ -2,13 +2,14 @@
 scripto_load_shortcuts() {
     local bin_dir="${SCRIPTO_CONFIG:-$HOME/.scripto}/bin"
     if [ -d "$bin_dir" ]; then
+        setopt local_options null_glob
         for func_file in "$bin_dir"/*.zsh; do
             [ -f "$func_file" ] && source "$func_file"
         done
     fi
 }
 
-scripto_load_shortcuts()
+scripto_load_shortcuts
 
 scripto() {
     # Create a temporary file for command communication
@@ -41,6 +42,8 @@ scripto() {
     # Check if a command was written to the file
     if [ $exit_code -eq 0 ] && [ -s "$cmd_file" ]; then
         # Source the command file directly - it contains the actual command to execute
+        # echo "going to source $cmd_file"
+        # cat $cmd_file
         source "$cmd_file"
         local source_exit=$?
         rm -f "$cmd_file"
@@ -94,7 +97,7 @@ scripto() {
         return $editor_exit
     else
         # Error occurred - cleanup and return error
-        rm -f "$cmd_file"
+        # rm -f "$cmd_file"
         return $exit_code
     fi
 }

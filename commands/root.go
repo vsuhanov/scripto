@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	// "scripto/entities"
-	"scripto/internal/args"
 	"scripto/internal/execution"
 	"scripto/internal/script"
 	"scripto/internal/services"
@@ -150,130 +149,33 @@ func findScriptByFilePath(config storage.Config, filePath string) (*script.Match
 
 // executeFoundScript is the unified executor for all matched scripts
 func executeFoundScript(matchResult *script.MatchResult, scriptArgs []string) error {
-	// Check if script has a file path (stored as file) or is a command
-	if matchResult.Script.FilePath == "" {
-		return fmt.Errorf("script has no file path or command content")
-	}
-
-	// Read the script file to determine execution type
-	content, err := os.ReadFile(matchResult.Script.FilePath)
+	executor := execution.NewScriptExecutor()
+	
+	// Check if argument processing is needed
+	processingResult, err := executor.ProcessScriptArguments(matchResult, scriptArgs)
 	if err != nil {
-		return fmt.Errorf("failed to read script file %s: %w", matchResult.Script.FilePath, err)
-	}
-
-	contentStr := string(content)
-
-	// Check if this is an executable script (starts with shebang)
-	if strings.HasPrefix(contentStr, "#!") {
-		// Executable script - pass arguments directly, no placeholder processing
-		return executeExecutableScript(matchResult.Script.FilePath, scriptArgs)
-	}
-
-	// Shell command script - process placeholders
-	return executeShellCommandScript(matchResult, scriptArgs)
-}
-
-// executeExecutableScript handles scripts that start with shebang
-func executeExecutableScript(filePath string, args []string) error {
-	finalCommand := filePath
-	for _, arg := range args {
-		if strings.Contains(arg, " ") && !strings.HasPrefix(arg, "\"") {
-			finalCommand += fmt.Sprintf(" \"%s\"", arg)
-		} else {
-			finalCommand += " " + arg
-		}
-	}
-	return executeFinalCommand(finalCommand)
-}
-
-// executeShellCommandScript handles shell command scripts with placeholder processing
-func executeShellCommandScript(matchResult *script.MatchResult, scriptArgs []string) error {
-	processor := args.NewArgumentProcessor(matchResult.Script)
-
-	// Validate arguments (only for shell command scripts)
-	if err := processor.ValidateArguments(scriptArgs); err != nil {
 		return err
 	}
 
-	// Process arguments
-	result, err := processor.ProcessArguments(scriptArgs)
+	// If no placeholder form is needed, execute directly
+	if !processingResult.NeedsPlaceholderForm {
+		return executor.ExecuteScriptDirect(processingResult.FinalCommand)
+	}
+
+	// Show placeholder form
+	formResult, err := tui.RunPlaceholderForm(processingResult.Placeholders)
 	if err != nil {
-		return fmt.Errorf("failed to process arguments: %w", err)
+		return fmt.Errorf("failed to collect placeholder values: %w", err)
 	}
 
-	// Check if script has any placeholders
-	hasPlaceholders := len(result.Placeholders) > 0
-
-	// Always show PlaceholderForm if script has placeholders
-	if hasPlaceholders {
-		// Create a list of all placeholders for the form, including those already provided
-		var allPlaceholders []args.PlaceholderValue
-		placeholderOrder := processor.GetPlaceholderOrder()
-
-		for _, name := range placeholderOrder {
-			if placeholder, exists := result.Placeholders[name]; exists {
-				// Set the default value to the provided value if available, otherwise use the original default
-				if placeholder.Provided && placeholder.Value != "" {
-					placeholder.DefaultValue = placeholder.Value
-				}
-				allPlaceholders = append(allPlaceholders, placeholder)
-			}
-		}
-
-		// If no order found, use placeholders from result
-		if len(allPlaceholders) == 0 {
-			for _, placeholder := range result.Placeholders {
-				if placeholder.Provided && placeholder.Value != "" {
-					placeholder.DefaultValue = placeholder.Value
-				}
-				allPlaceholders = append(allPlaceholders, placeholder)
-			}
-		}
-
-		formResult, err := tui.RunPlaceholderForm(allPlaceholders)
-		if err != nil {
-			return fmt.Errorf("failed to collect placeholder values: %w", err)
-		}
-
-		if formResult.Cancelled {
-			return fmt.Errorf("operation cancelled by user")
-		}
-
-		// Update result with form values (user may have modified them)
-		for name, value := range formResult.Values {
-			if placeholder, exists := result.Placeholders[name]; exists {
-				placeholder.Value = value
-				placeholder.Provided = true
-				result.Placeholders[name] = placeholder
-			}
-		}
-
-		// Check if script has positional placeholders
-		hasPositional, err := processor.HasPositionalPlaceholders()
-		if err != nil {
-			return fmt.Errorf("failed to check placeholder types: %w", err)
-		}
-
-		// Convert values to appropriate argument format and regenerate final command
-		var additionalArgs []string
-		if hasPositional {
-			// For positional scripts, convert named values to positional arguments
-			additionalArgs = convertToPositionalArgs(formResult.Values, allPlaceholders)
-		} else {
-			// For named scripts, convert to named arguments
-			additionalArgs = convertToArgs(formResult.Values)
-		}
-
-		newResult, err := processor.ProcessArguments(append(scriptArgs, additionalArgs...))
-		if err != nil {
-			return err
-		}
-		result.FinalCommand = newResult.FinalCommand
+	if formResult.Cancelled {
+		return fmt.Errorf("operation cancelled by user")
 	}
 
-	// Execute the final command
-	return executeFinalCommand(result.FinalCommand)
+	// Execute with placeholder values
+	return executor.ExecuteScriptWithPlaceholders(matchResult, scriptArgs, formResult.Values)
 }
+
 
 // handleNoMatch handles the case when no script matches
 func handleNoMatch(input string, config storage.Config, configPath string) error {
@@ -329,26 +231,6 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 	return executeFoundScript(matchResult, []string{})
 }
 
-// convertToArgs converts a map of values to argument format
-func convertToArgs(values map[string]string) []string {
-	var arguments []string
-	for name, value := range values {
-		arguments = append(arguments, fmt.Sprintf("--%s=%s", name, value))
-	}
-	return arguments
-}
-
-// convertToPositionalArgs converts named values back to positional arguments based on order
-func convertToPositionalArgs(values map[string]string, missingArgs []args.PlaceholderValue) []string {
-	var arguments []string
-	// Convert based on the order of missing arguments (which preserves original placeholder order)
-	for _, placeholder := range missingArgs {
-		if value, exists := values[placeholder.Name]; exists {
-			arguments = append(arguments, value)
-		}
-	}
-	return arguments
-}
 
 // writeScriptPathForEditor writes the script path for editor use
 func writeScriptPathForEditor(scriptPath string) error {
@@ -362,28 +244,6 @@ func writeScriptPathForEditor(scriptPath string) error {
 	return nil
 }
 
-// executeCommand executes a script file with placeholder processing
-func executeCommand(finalCommand string) error {
-	return executeFinalCommand(finalCommand)
-}
-
-// executeFinalCommand executes a script file with the given placeholders
-func executeFinalCommand(finalCommand string) error {
-	// Check if we have a custom file descriptor for command output
-	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
-	if cmdFdPath != "" {
-		// Write command to custom descriptor file
-		err := os.WriteFile(cmdFdPath, []byte(finalCommand), 0600)
-		if err != nil {
-			return fmt.Errorf("failed to write command to descriptor: %w", err)
-		}
-		return nil
-	}
-
-	// Fallback to stdout for backward compatibility
-	fmt.Print(finalCommand)
-	return nil
-}
 
 // convertScriptResultsToSuggestions converts script matcher results to completion suggestions
 func convertScriptResultsToSuggestions(results []script.MatchResult, separator string, toComplete string) []string {

@@ -267,13 +267,33 @@ func (fc *RootFlowController) findScriptByFilePath(config storage.Config, filePa
 	return nil, fmt.Errorf("script not found with file path: %s", filePath)
 }
 
-// executeFoundScript executes a matched script
+// executeFoundScript executes a matched script using the executor
 func (fc *RootFlowController) executeFoundScript(matchResult *script.MatchResult, scriptArgs []string) error {
-	// This is a simplified version - the full implementation would need 
-	// the argument processing logic from root.go
+	executor := execution.NewScriptExecutor()
 	
-	// For now, just write the script path to command FD
-	return fc.writeScriptPathForEditor(matchResult.Script.FilePath)
+	// Check if argument processing is needed
+	processingResult, err := executor.ProcessScriptArguments(matchResult, scriptArgs)
+	if err != nil {
+		return err
+	}
+
+	// If no placeholder form is needed, execute directly
+	if !processingResult.NeedsPlaceholderForm {
+		return executor.ExecuteScriptDirect(processingResult.FinalCommand)
+	}
+
+	// Show placeholder form
+	formResult, err := RunPlaceholderForm(processingResult.Placeholders)
+	if err != nil {
+		return fmt.Errorf("failed to collect placeholder values: %w", err)
+	}
+
+	if formResult.Cancelled {
+		return fmt.Errorf("operation cancelled by user")
+	}
+
+	// Execute with placeholder values
+	return executor.ExecuteScriptWithPlaceholders(matchResult, scriptArgs, formResult.Values)
 }
 
 // writeScriptPathForEditor writes the script path for editor use
