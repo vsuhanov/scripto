@@ -38,14 +38,17 @@ Zsh:
   $ scripto completion zsh > ~/.oh-my-zsh/completions/_scripto
   # For standard installations:
   $ scripto completion zsh > /usr/local/share/zsh/site-functions/_scripto
-
-  # You will need to start a new shell for this setup to take effect.
+  # For standard installations:
+	#  append completions to fpath
+	fpath=($HOME/zsh-completions $fpath)
+  $ scripto completion zsh > $HOME/zsh-completions/_scripto
 
 fish:
 
   $ scripto completion fish | source
 
   # To load completions for each session, execute once:
+
   $ scripto completion fish > ~/.config/fish/completions/scripto.fish
 
 PowerShell:
