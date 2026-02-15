@@ -5,11 +5,8 @@ import (
 	"os"
 	"strings"
 
-	// "scripto/entities"
-	"scripto/internal/execution"
 	"scripto/internal/script"
 	"scripto/internal/services"
-	"scripto/internal/storage"
 	"scripto/internal/tui"
 
 	"github.com/spf13/cobra"
@@ -27,21 +24,23 @@ Examples:
   scripto backup --host=localhost  # Execute "backup" script with named args`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		terminalService := services.NewTerminalService()
+
 		if len(args) == 0 {
 			// No arguments - launch TUI with main list screen
 			result, err := tui.RunApp(tui.StartAtMainList)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
-				os.Exit(1)
+				os.Exit(int(services.ExitCodeError))
 			}
 
-			if result.ExitCode == 4 {
+			if result.ExitCode == int(services.ExitCodeExternalEditor) {
 				// Exit code 4 means external edit was requested
-				if err := writeScriptPathForEditor(result.ScriptPath); err != nil {
+				if err := terminalService.EditScriptExternal(result.ScriptPath); err != nil {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-					os.Exit(1)
+					os.Exit(int(services.ExitCodeError))
 				}
-			} else if result.ExitCode == 0 {
+			} else if result.ExitCode == int(services.ExitCodeSuccess) {
 				// Exit code 0 means script execution was requested
 				// The script path is in result.ScriptPath
 				// This is handled by the shell wrapper
@@ -55,14 +54,14 @@ Examples:
 			result, err := tui.RunApp(tui.StartAtHistory)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
-				os.Exit(1)
+				os.Exit(int(services.ExitCodeError))
 			}
 
-			if result.ExitCode == 4 {
+			if result.ExitCode == int(services.ExitCodeExternalEditor) {
 				// Exit code 4 means external edit was requested
-				if err := writeScriptPathForEditor(result.ScriptPath); err != nil {
+				if err := terminalService.EditScriptExternal(result.ScriptPath); err != nil {
 					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-					os.Exit(1)
+					os.Exit(int(services.ExitCodeError))
 				}
 			}
 
@@ -72,41 +71,35 @@ Examples:
 		// Execute script matching logic
 		if err := executeScript(args); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			os.Exit(int(services.ExitCodeError))
 		}
 	},
 }
 
 // executeScript handles the main script execution logic
 func executeScript(userArgs []string) error {
-	// Load configuration
-	configPath, err := storage.GetConfigPath()
+	// Create script service
+	scriptService, err := services.NewScriptService()
 	if err != nil {
-		return fmt.Errorf("failed to get config path: %w", err)
-	}
-
-	config, err := storage.ReadConfig(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
+		return fmt.Errorf("failed to create script service: %w", err)
 	}
 
 	// Parse script name and arguments, handling -- separator
 	scriptName, scriptArgs := parseScriptNameAndArgs(userArgs)
 
 	// Create matcher and find best match
-	matcher := script.NewMatcher(config)
-	matchResult, err := matcher.Match(scriptName)
+	matchResult, err := scriptService.Match(scriptName)
 	if err != nil {
 		return fmt.Errorf("failed to match script: %w", err)
 	}
 
 	switch matchResult.Type {
 	case script.ExactName, script.PartialCommand:
-		return executeFoundScript(matchResult, scriptArgs)
+		return executeFoundScript(scriptService, matchResult, scriptArgs)
 	case script.NoMatch:
 		// For no match, use the original full command for backward compatibility
 		fullInput := strings.Join(userArgs, " ")
-		return handleNoMatch(fullInput, config, configPath)
+		return handleNoMatch(fullInput, scriptService)
 	default:
 		return fmt.Errorf("unknown match type")
 	}
@@ -151,40 +144,22 @@ func parseScriptNameAndArgs(userArgs []string) (string, []string) {
 	return scriptName, scriptArgs
 }
 
-// findScriptByFilePath finds a script entity in the config by its file path
-func findScriptByFilePath(config storage.Config, filePath string) (*script.MatchResult, error) {
-	// Search through all scopes for a script with matching file path
-	for scope, scripts := range config {
-		for _, scriptEntity := range scripts {
-			if scriptEntity.FilePath == filePath {
-				// Create a match result for this script
-				matchResult := &script.MatchResult{
-					Type:       script.ExactName,
-					Script:     scriptEntity,
-					Confidence: 1.0,
-				}
-				// Ensure script has correct scope set
-				matchResult.Script.Scope = scope
-				return matchResult, nil
-			}
-		}
-	}
-	return nil, fmt.Errorf("script not found with file path: %s", filePath)
-}
-
 // executeFoundScript is the unified executor for all matched scripts
-func executeFoundScript(matchResult *script.MatchResult, scriptArgs []string) error {
-	executor := execution.NewScriptExecutor()
-	
-	// Check if argument processing is needed
-	processingResult, err := executor.ProcessScriptArguments(matchResult, scriptArgs)
+func executeFoundScript(_ *services.ScriptService, matchResult *script.MatchResult, scriptArgs []string) error {
+	executionService := services.NewExecutionService()
+	terminalService := services.NewTerminalService()
+
+	processingResult, err := executionService.ProcessScriptArguments(matchResult, scriptArgs)
 	if err != nil {
 		return err
 	}
 
-	// If no placeholder form is needed, execute directly
 	if !processingResult.NeedsPlaceholderForm {
-		return executor.ExecuteScriptDirect(processingResult.FinalCommand)
+		finalCommand, err := executionService.PrepareDirectExecution(processingResult)
+		if err != nil {
+			return err
+		}
+		return terminalService.ExecuteScript(finalCommand)
 	}
 
 	// Show placeholder form
@@ -198,24 +173,22 @@ func executeFoundScript(matchResult *script.MatchResult, scriptArgs []string) er
 	}
 
 	// Execute with placeholder values
-	return executor.ExecuteScriptWithPlaceholders(matchResult, scriptArgs, formResult.Values)
+	finalCommand, err := executionService.PrepareExecution(matchResult, scriptArgs, formResult.Values)
+	if err != nil {
+		return err
+	}
+	return terminalService.ExecuteScript(finalCommand)
 }
 
 
 // handleNoMatch handles the case when no script matches
-func handleNoMatch(input string, config storage.Config, configPath string) error {
-	// Use TUI to create and save new script
-	service, err := services.NewScriptService()
-	if err != nil {
-		return fmt.Errorf("failed to create script service: %w", err)
-	}
-
+func handleNoMatch(input string, scriptService *services.ScriptService) error {
 	// Create new scriptObj with command pre-filled
-	scriptObj := service.CreateEmptyScript()
-	scriptObj.Scope = service.GetCurrentDirectoryScope() // Default to local scope
+	scriptObj := scriptService.CreateEmptyScript()
+	scriptObj.Scope = scriptService.GetCurrentDirectoryScope() // Default to local scope
 
 	// Create a temporary script file with the command
-	tempFilePath, err := service.CreateTempScriptFile(input)
+	tempFilePath, err := scriptService.CreateTempScriptFile(input)
 	if err != nil {
 		return fmt.Errorf("failed to create temp script file: %w", err)
 	}
@@ -239,7 +212,7 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 		finalCommand = input
 	}
 
-	if err := service.SaveScript(result.Script, finalCommand, nil); err != nil {
+	if err := scriptService.SaveScript(result.Script, finalCommand, nil); err != nil {
 		return fmt.Errorf("failed to save script: %w", err)
 	}
 
@@ -253,20 +226,7 @@ func handleNoMatch(input string, config storage.Config, configPath string) error
 		Confidence: 1.0,
 	}
 
-	return executeFoundScript(matchResult, []string{})
-}
-
-
-// writeScriptPathForEditor writes the script path for editor use
-func writeScriptPathForEditor(scriptPath string) error {
-	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
-	if cmdFdPath != "" {
-		return execution.WriteScriptPathToFile(scriptPath, cmdFdPath)
-	}
-
-	// Fallback to stdout for backward compatibility
-	fmt.Print(scriptPath)
-	return nil
+	return executeFoundScript(scriptService, matchResult, []string{})
 }
 
 
@@ -326,21 +286,14 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 func getCompletionSuggestions(toComplete string) ([]string, cobra.ShellCompDirective) {
 	separator := "\x1F"
 
-	// Load configuration
-	configPath, err := storage.GetConfigPath()
+	// Create script service
+	scriptService, err := services.NewScriptService()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
-
-	config, err := storage.ReadConfig(configPath)
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveError
-	}
-
-	matcher := script.NewMatcher(config)
 
 	// Always find all scripts and filter by prefix
-	allScripts, err := matcher.FindAllScripts()
+	allScripts, err := scriptService.FindAllScripts()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
@@ -361,10 +314,10 @@ func Execute() {
 	if len(cmdArgs) == 0 {
 		if err := rootCmd.Execute(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
+			os.Exit(int(services.ExitCodeError))
 		}
 		// Built-in command completed successfully - exit with code 3
-		os.Exit(3)
+		os.Exit(int(services.ExitCodeBuiltinComplete))
 	}
 
 	firstArg := cmdArgs[0]
@@ -373,7 +326,7 @@ func Execute() {
 	if firstArg == "__complete" {
 		handleCompletion(cmdArgs[1:])
 		// Completion completed successfully - exit with code 3
-		os.Exit(3)
+		os.Exit(int(services.ExitCodeBuiltinComplete))
 	}
 
 	// Check if the first argument is a known subcommand
@@ -384,17 +337,17 @@ func Execute() {
 			// This is a known subcommand, delegate to Cobra
 			if err := rootCmd.Execute(); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
+				os.Exit(int(services.ExitCodeError))
 			}
 			// Built-in command completed successfully - exit with code 3
-			os.Exit(3)
+			os.Exit(int(services.ExitCodeBuiltinComplete))
 		}
 	}
 
 	// Not a known subcommand, treat as script execution
 	if err := executeScript(cmdArgs); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		os.Exit(int(services.ExitCodeError))
 	}
 }
 

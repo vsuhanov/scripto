@@ -1,4 +1,4 @@
-package execution
+package services
 
 import (
 	"fmt"
@@ -14,13 +14,13 @@ type ArgumentProcessingResult struct {
 	FinalCommand         string
 }
 
-type ScriptExecutor struct{}
+type ExecutionService struct{}
 
-func NewScriptExecutor() *ScriptExecutor {
-	return &ScriptExecutor{}
+func NewExecutionService() *ExecutionService {
+	return &ExecutionService{}
 }
 
-func (se *ScriptExecutor) ProcessScriptArguments(matchResult *script.MatchResult, scriptArgs []string) (*ArgumentProcessingResult, error) {
+func (es *ExecutionService) ProcessScriptArguments(matchResult *script.MatchResult, scriptArgs []string) (*ArgumentProcessingResult, error) {
 	if matchResult.Script.FilePath == "" {
 		return nil, fmt.Errorf("script has no file path or command content")
 	}
@@ -94,12 +94,12 @@ func (se *ScriptExecutor) ProcessScriptArguments(matchResult *script.MatchResult
 	}, nil
 }
 
-func (se *ScriptExecutor) ExecuteScriptWithPlaceholders(matchResult *script.MatchResult, scriptArgs []string, placeholderValues map[string]string) error {
+func (es *ExecutionService) PrepareExecution(matchResult *script.MatchResult, scriptArgs []string, placeholderValues map[string]string) (string, error) {
 	processor := args.NewArgumentProcessor(matchResult.Script)
 
 	result, err := processor.ProcessArguments(scriptArgs)
 	if err != nil {
-		return fmt.Errorf("failed to process arguments: %w", err)
+		return "", fmt.Errorf("failed to process arguments: %w", err)
 	}
 
 	for name, value := range placeholderValues {
@@ -112,29 +112,32 @@ func (se *ScriptExecutor) ExecuteScriptWithPlaceholders(matchResult *script.Matc
 
 	hasPositional, err := processor.HasPositionalPlaceholders()
 	if err != nil {
-		return fmt.Errorf("failed to check placeholder types: %w", err)
+		return "", fmt.Errorf("failed to check placeholder types: %w", err)
 	}
 
 	var additionalArgs []string
 	if hasPositional {
-		additionalArgs = se.convertToPositionalArgs(placeholderValues, result.Placeholders)
+		additionalArgs = es.convertToPositionalArgs(placeholderValues, result.Placeholders)
 	} else {
-		additionalArgs = se.convertToArgs(placeholderValues)
+		additionalArgs = es.convertToArgs(placeholderValues)
 	}
 
 	newResult, err := processor.ProcessArguments(append(scriptArgs, additionalArgs...))
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return se.executeFinalCommand(newResult.FinalCommand)
+	return newResult.FinalCommand, nil
 }
 
-func (se *ScriptExecutor) ExecuteScriptDirect(finalCommand string) error {
-	return se.executeFinalCommand(finalCommand)
+func (es *ExecutionService) PrepareDirectExecution(processingResult *ArgumentProcessingResult) (string, error) {
+	if processingResult == nil {
+		return "", fmt.Errorf("processing result is nil")
+	}
+	return processingResult.FinalCommand, nil
 }
 
-func (se *ScriptExecutor) convertToArgs(values map[string]string) []string {
+func (es *ExecutionService) convertToArgs(values map[string]string) []string {
 	var arguments []string
 	for name, value := range values {
 		arguments = append(arguments, fmt.Sprintf("--%s=%s", name, value))
@@ -142,25 +145,10 @@ func (se *ScriptExecutor) convertToArgs(values map[string]string) []string {
 	return arguments
 }
 
-func (se *ScriptExecutor) convertToPositionalArgs(values map[string]string, placeholders map[string]args.PlaceholderValue) []string {
+func (es *ExecutionService) convertToPositionalArgs(values map[string]string, _ map[string]args.PlaceholderValue) []string {
 	var arguments []string
 	for _, value := range values {
 		arguments = append(arguments, value)
 	}
 	return arguments
 }
-
-func (se *ScriptExecutor) executeFinalCommand(finalCommand string) error {
-	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
-	if cmdFdPath != "" {
-		err := os.WriteFile(cmdFdPath, []byte(finalCommand), 0600)
-		if err != nil {
-			return fmt.Errorf("failed to write command to descriptor: %w", err)
-		}
-		return nil
-	}
-
-	fmt.Print(finalCommand)
-	return nil
-}
-

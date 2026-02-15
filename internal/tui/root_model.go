@@ -2,25 +2,23 @@ package tui
 
 import (
 	"fmt"
-	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"scripto/entities"
-	"scripto/internal/execution"
-	"scripto/internal/script"
 	"scripto/internal/services"
-	"scripto/internal/storage"
 )
 
 type RootModel struct {
-	scriptService *services.ScriptService
-	currentScreen tea.Model
-	screenStack   []tea.Model
-	width         int
-	height        int
-	shouldExit    bool
-	exitCode      int
-	exitMessage   string
+	scriptService    *services.ScriptService
+	executionService *services.ExecutionService
+	terminalService  *services.TerminalService
+	currentScreen    tea.Model
+	screenStack      []tea.Model
+	width            int
+	height           int
+	shouldExit       bool
+	exitCode         int
+	exitMessage      string
 }
 
 func NewRootModel() (*RootModel, error) {
@@ -36,15 +34,15 @@ func NewRootModel() (*RootModel, error) {
 
 	mainListScreen.SetServices(scriptService)
 
-	m := &RootModel{
-		scriptService: scriptService,
-		currentScreen: mainListScreen,
-		screenStack:   []tea.Model{},
-		width:         80,
-		height:        24,
-	}
-
-	return m, nil
+	return &RootModel{
+		scriptService:    scriptService,
+		executionService: services.NewExecutionService(),
+		terminalService:  services.NewTerminalService(),
+		currentScreen:    mainListScreen,
+		screenStack:      []tea.Model{},
+		width:            80,
+		height:           24,
+	}, nil
 }
 
 func (m RootModel) Init() tea.Cmd {
@@ -105,7 +103,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.shouldExit = true
-		m.exitCode = 3
+		m.exitCode = int(services.ExitCodeBuiltinComplete)
 		return m, tea.Quit
 
 	case RefreshScriptsMsg:
@@ -142,26 +140,44 @@ func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
 			return ErrorMsg(fmt.Errorf("no script path provided for execution"))
 		}
 
-		configPath, err := storage.GetConfigPath()
-		if err != nil {
-			return ErrorMsg(fmt.Errorf("failed to get config path: %w", err))
-		}
-
-		config, err := storage.ReadConfig(configPath)
-		if err != nil {
-			return ErrorMsg(fmt.Errorf("failed to read config: %w", err))
-		}
-
-		matchResult, err := m.findScriptByFilePath(config, scriptPath)
+		matchResult, err := m.scriptService.FindScriptByFilePath(scriptPath)
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to find script: %w", err))
 		}
 
-		if err := m.executeFoundScript(matchResult, []string{}); err != nil {
-			return ErrorMsg(fmt.Errorf("error executing script: %w", err))
+		processingResult, err := m.executionService.ProcessScriptArguments(matchResult, []string{})
+		if err != nil {
+			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
 		}
 
-		return ExitAppMsg{exitCode: 0, message: scriptPath}
+		if !processingResult.NeedsPlaceholderForm {
+			finalCommand, err := m.executionService.PrepareDirectExecution(processingResult)
+			if err != nil {
+				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
+			}
+			if err := m.terminalService.ExecuteScript(finalCommand); err != nil {
+				return ErrorMsg(err)
+			}
+		} else {
+			formResult, err := RunPlaceholderForm(processingResult.Placeholders)
+			if err != nil {
+				return ErrorMsg(fmt.Errorf("failed to collect placeholder values: %w", err))
+			}
+
+			if formResult.Cancelled {
+				return ErrorMsg(fmt.Errorf("operation cancelled by user"))
+			}
+
+			finalCommand, err := m.executionService.PrepareExecution(matchResult, []string{}, formResult.Values)
+			if err != nil {
+				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
+			}
+			if err := m.terminalService.ExecuteScript(finalCommand); err != nil {
+				return ErrorMsg(err)
+			}
+		}
+
+		return ExitAppMsg{exitCode: int(services.ExitCodeSuccess), message: scriptPath}
 	}
 }
 
@@ -171,11 +187,11 @@ func (m *RootModel) handleEditScriptExternal(scriptPath string) tea.Cmd {
 			return ErrorMsg(fmt.Errorf("no script path provided for external edit"))
 		}
 
-		if err := m.writeScriptPathForEditor(scriptPath); err != nil {
+		if err := m.terminalService.EditScriptExternal(scriptPath); err != nil {
 			return ErrorMsg(err)
 		}
 
-		return ExitAppMsg{exitCode: 4, message: scriptPath}
+		return ExitAppMsg{exitCode: int(services.ExitCodeExternalEditor), message: scriptPath}
 	}
 }
 
@@ -189,53 +205,3 @@ func (m *RootModel) handleSaveScript(script entities.Script, command string, ori
 	}
 }
 
-func (m *RootModel) findScriptByFilePath(config storage.Config, filePath string) (*script.MatchResult, error) {
-	for scope, scripts := range config {
-		for _, scriptEntity := range scripts {
-			if scriptEntity.FilePath == filePath {
-				matchResult := &script.MatchResult{
-					Type:       script.ExactName,
-					Script:     scriptEntity,
-					Confidence: 1.0,
-				}
-				matchResult.Script.Scope = scope
-				return matchResult, nil
-			}
-		}
-	}
-	return nil, fmt.Errorf("script not found with file path: %s", filePath)
-}
-
-func (m *RootModel) executeFoundScript(matchResult *script.MatchResult, scriptArgs []string) error {
-	executor := execution.NewScriptExecutor()
-
-	processingResult, err := executor.ProcessScriptArguments(matchResult, scriptArgs)
-	if err != nil {
-		return err
-	}
-
-	if !processingResult.NeedsPlaceholderForm {
-		return executor.ExecuteScriptDirect(processingResult.FinalCommand)
-	}
-
-	formResult, err := RunPlaceholderForm(processingResult.Placeholders)
-	if err != nil {
-		return fmt.Errorf("failed to collect placeholder values: %w", err)
-	}
-
-	if formResult.Cancelled {
-		return fmt.Errorf("operation cancelled by user")
-	}
-
-	return executor.ExecuteScriptWithPlaceholders(matchResult, scriptArgs, formResult.Values)
-}
-
-func (m *RootModel) writeScriptPathForEditor(scriptPath string) error {
-	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
-	if cmdFdPath != "" {
-		return execution.WriteScriptPathToFile(scriptPath, cmdFdPath)
-	}
-
-	fmt.Print(scriptPath)
-	return nil
-}

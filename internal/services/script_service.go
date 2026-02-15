@@ -4,14 +4,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"scripto/entities"
+	"scripto/internal/script"
 	"scripto/internal/storage"
 )
 
 // ScriptService handles all script-related business logic
 type ScriptService struct {
 	configPath string
+	config     storage.Config
 }
 
 // NewScriptService creates a new script service
@@ -21,8 +25,14 @@ func NewScriptService() (*ScriptService, error) {
 		return nil, fmt.Errorf("failed to get config path: %w", err)
 	}
 
+	config, err := storage.ReadConfig(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config: %w", err)
+	}
+
 	return &ScriptService{
 		configPath: configPath,
+		config:     config,
 	}, nil
 }
 
@@ -267,4 +277,215 @@ func (s *ScriptService) SyncShortcuts() error {
 	}
 
 	return nil
+}
+
+// Reload refreshes the config from disk
+func (s *ScriptService) Reload() error {
+	config, err := storage.ReadConfig(s.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to reload config: %w", err)
+	}
+	s.config = config
+	return nil
+}
+
+// FindAllScripts discovers all available scripts in order: local -> parent -> global
+func (s *ScriptService) FindAllScripts() ([]script.MatchResult, error) {
+	var results []script.MatchResult
+
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	// Track directories we've seen to avoid duplicates
+	seen := make(map[string]bool)
+
+	// 1. Local scripts (current directory)
+	if scripts, exists := s.config[cwd]; exists {
+		for _, scriptEnt := range scripts {
+			// Ensure script has correct scope set
+			scriptEnt.Scope = cwd
+			results = append(results, script.MatchResult{
+				Script: scriptEnt,
+			})
+		}
+		seen[cwd] = true
+	}
+
+	// 2. Parent directory scripts (walk up the tree)
+	dir := cwd
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir || parent == "/" {
+			break // Reached root
+		}
+
+		if !seen[parent] {
+			if scripts, exists := s.config[parent]; exists {
+				for _, scriptEnt := range scripts {
+					// Ensure script has correct scope set
+					scriptEnt.Scope = parent
+					results = append(results, script.MatchResult{
+						Script: scriptEnt,
+					})
+				}
+			}
+			seen[parent] = true
+		}
+
+		dir = parent
+	}
+
+	// 3. Global scripts
+	if scripts, exists := s.config["global"]; exists {
+		for _, scriptEnt := range scripts {
+			// Ensure script has correct scope set
+			scriptEnt.Scope = "global"
+			results = append(results, script.MatchResult{
+				Script: scriptEnt,
+			})
+		}
+	}
+
+	return results, nil
+}
+
+// Match finds the best matching script for the given input
+func (s *ScriptService) Match(input string) (*script.MatchResult, error) {
+	allScripts, err := s.FindAllScripts()
+	if err != nil {
+		return nil, err
+	}
+
+	// Try exact name matches first (highest priority)
+	for _, result := range allScripts {
+		if result.Script.Name != "" && result.Script.Name == input {
+			result.Type = script.ExactName
+			result.Confidence = 1.0
+			return &result, nil
+		}
+	}
+
+	// Command field removed - partial command matching no longer available
+	var candidates []script.MatchResult
+
+	// Sort candidates by confidence (highest first), then by scope priority
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].Confidence != candidates[j].Confidence {
+			return candidates[i].Confidence > candidates[j].Confidence
+		}
+		return s.getScopePriority(candidates[i].Script.Scope) < s.getScopePriority(candidates[j].Script.Scope)
+	})
+
+	if len(candidates) > 0 {
+		return &candidates[0], nil
+	}
+
+	// No match found
+	return &script.MatchResult{Type: script.NoMatch}, nil
+}
+
+// FilterByKeyword filters scripts that contain the given keyword
+func (s *ScriptService) FilterByKeyword(keyword string) ([]script.MatchResult, error) {
+	allScripts, err := s.FindAllScripts()
+	if err != nil {
+		return nil, err
+	}
+
+	var filtered []script.MatchResult
+	keyword = strings.ToLower(keyword)
+
+	for _, result := range allScripts {
+		// Check if keyword appears in name or description
+		searchText := strings.ToLower(result.Script.Name + " " + result.Script.Description)
+		if strings.Contains(searchText, keyword) {
+			// Calculate confidence based on keyword match quality
+			result.Confidence = s.calculateKeywordConfidence(keyword, result.Script)
+			filtered = append(filtered, result)
+		}
+	}
+
+	// Sort by confidence, then scope priority
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].Confidence != filtered[j].Confidence {
+			return filtered[i].Confidence > filtered[j].Confidence
+		}
+		return s.getScopePriority(filtered[i].Script.Scope) < s.getScopePriority(filtered[j].Script.Scope)
+	})
+
+	return filtered, nil
+}
+
+// FindScriptByFilePath finds a script entity in the config by its file path
+func (s *ScriptService) FindScriptByFilePath(filePath string) (*script.MatchResult, error) {
+	// Search through all scopes for a script with matching file path
+	for scope, scripts := range s.config {
+		for _, scriptEnt := range scripts {
+			if scriptEnt.FilePath == filePath {
+				// Create a match result for this script
+				matchResult := &script.MatchResult{
+					Type:       script.ExactName,
+					Script:     scriptEnt,
+					Confidence: 1.0,
+				}
+				// Ensure script has correct scope set
+				matchResult.Script.Scope = scope
+				return matchResult, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("script not found with file path: %s", filePath)
+}
+
+// getScopePriority returns the priority order for script scopes
+func (s *ScriptService) getScopePriority(scope string) int {
+	if scope == "global" {
+		return 2
+	}
+
+	// Get current working directory
+	cwd, err := os.Getwd()
+	if err != nil {
+		return 3 // Unknown priority if we can't get cwd
+	}
+
+	if scope == cwd {
+		return 0 // Local (current directory)
+	}
+
+	// Check if it's a parent directory
+	if strings.HasPrefix(cwd, scope+string(filepath.Separator)) {
+		return 1 // Parent directory
+	}
+
+	return 3 // Other directory
+}
+
+// calculateKeywordConfidence calculates how well the keyword matches the script
+func (s *ScriptService) calculateKeywordConfidence(keyword string, scriptEnt entities.Script) float64 {
+	confidence := 0.0
+
+	// Exact name match gets highest score
+	if strings.ToLower(scriptEnt.Name) == keyword {
+		confidence = 1.0
+	} else if strings.Contains(strings.ToLower(scriptEnt.Name), keyword) {
+		confidence = 0.8
+	}
+
+	// Description matches get lower scores
+	if strings.Contains(strings.ToLower(scriptEnt.Description), keyword) {
+		confidence = max(confidence, 0.4)
+	}
+
+	return confidence
+}
+
+// max returns the larger of two float64 values
+func max(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }
