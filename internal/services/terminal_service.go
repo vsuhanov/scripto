@@ -5,13 +5,13 @@ import (
 	"os"
 )
 
-type ExitCode int
+type exitCode int
 
 const (
-	ExitCodeSuccess         ExitCode = 0
-	ExitCodeError           ExitCode = 1
-	ExitCodeBuiltinComplete ExitCode = 3
-	ExitCodeExternalEditor  ExitCode = 4
+	exitCodeSuccess         exitCode = 0
+	exitCodeError           exitCode = 1
+	exitCodeBuiltinComplete exitCode = 3
+	exitCodeExternalEditor  exitCode = 4
 )
 
 type TerminalService struct{}
@@ -27,12 +27,12 @@ func (ts *TerminalService) ExecuteScript(finalCommand string) error {
 		if err != nil {
 			return fmt.Errorf("failed to write command to descriptor: %w", err)
 		}
-		os.Exit(int(ExitCodeSuccess))
+		ts.exit(int(exitCodeSuccess))
 		return nil
 	}
 
 	fmt.Print(finalCommand)
-	os.Exit(int(ExitCodeSuccess))
+	ts.exit(int(exitCodeSuccess))
 	return nil
 }
 
@@ -43,22 +43,28 @@ func (ts *TerminalService) EditScriptExternal(scriptPath string) error {
 		if err != nil {
 			return fmt.Errorf("failed to write script path to descriptor: %w", err)
 		}
-		os.Exit(int(ExitCodeExternalEditor))
+		ts.exit(int(exitCodeExternalEditor))
 		return nil
 	}
 
 	fmt.Print(scriptPath)
-	os.Exit(int(ExitCodeExternalEditor))
+	ts.exit(int(exitCodeExternalEditor))
 	return nil
 }
 
-func (ts *TerminalService) ExitWithError(message string) error {
+func (ts *TerminalService) ExitWithError(message string) {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", message)
-	os.Exit(int(ExitCodeError))
-	return nil
+	ts.exit(int(exitCodeError))
 }
 
-func (ts *TerminalService) ExitBuiltinComplete() error {
-	os.Exit(int(ExitCodeBuiltinComplete))
-	return nil
+func (ts *TerminalService) ExitBuiltinComplete() {
+	ts.exit(int(exitCodeBuiltinComplete))
+}
+
+func (ts *TerminalService) ExitWithCode(code int) {
+	ts.exit(code)
+}
+
+func (ts *TerminalService) exit(code int) {
+	os.Exit(code)
 }

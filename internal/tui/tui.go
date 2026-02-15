@@ -37,10 +37,3 @@ func handleTUIResult(m MainModel) error {
 	// If we reach here without special handling, it means normal quit
 	return nil
 }
-
-
-// TUIResult represents the result of TUI interaction
-type TUIResult struct {
-	ScriptPath string
-	ExitCode   int
-}

@@ -16,28 +16,20 @@ type RootModel struct {
 	screenStack      []tea.Model
 	width            int
 	height           int
-	shouldExit       bool
-	exitCode         int
-	exitMessage      string
 }
 
-func NewRootModel() (*RootModel, error) {
-	scriptService, err := services.NewScriptService()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create script service: %w", err)
-	}
-
+func NewRootModel(container *services.Container) (*RootModel, error) {
 	mainListScreen, err := NewMainListScreen()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create main list screen: %w", err)
 	}
 
-	mainListScreen.SetServices(scriptService)
+	mainListScreen.SetServices(container.ScriptService)
 
 	return &RootModel{
-		scriptService:    scriptService,
-		executionService: services.NewExecutionService(),
-		terminalService:  services.NewTerminalService(),
+		scriptService:    container.ScriptService,
+		executionService: container.ExecutionService,
+		terminalService:  container.TerminalService,
 		currentScreen:    mainListScreen,
 		screenStack:      []tea.Model{},
 		width:            80,
@@ -65,9 +57,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ExitAppMsg:
-		m.shouldExit = true
-		m.exitCode = msg.exitCode
-		m.exitMessage = msg.message
+		m.terminalService.ExitWithCode(msg.exitCode)
 		return m, tea.Quit
 
 	case ExecuteScriptMsg:
@@ -102,8 +92,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.shouldExit = true
-		m.exitCode = int(services.ExitCodeBuiltinComplete)
+		m.terminalService.ExitWithCode(ExitBuiltinComplete)
 		return m, tea.Quit
 
 	case RefreshScriptsMsg:
@@ -177,7 +166,7 @@ func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
 			}
 		}
 
-		return ExitAppMsg{exitCode: int(services.ExitCodeSuccess), message: scriptPath}
+		return ExitAppMsg{exitCode: ExitSuccess, message: scriptPath}
 	}
 }
 
@@ -191,7 +180,7 @@ func (m *RootModel) handleEditScriptExternal(scriptPath string) tea.Cmd {
 			return ErrorMsg(err)
 		}
 
-		return ExitAppMsg{exitCode: int(services.ExitCodeExternalEditor), message: scriptPath}
+		return ExitAppMsg{exitCode: ExitExternalEditor, message: scriptPath}
 	}
 }
 

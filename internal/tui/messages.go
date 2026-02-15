@@ -10,6 +10,14 @@ import (
 	"scripto/internal/services"
 )
 
+// Exit codes for the TUI application
+const (
+	ExitSuccess         = 0
+	ExitError           = 1
+	ExitBuiltinComplete = 3
+	ExitExternalEditor  = 4
+)
+
 // Messages for the TUI components
 type (
 	ScriptsLoadedMsg []script.MatchResult
@@ -64,14 +72,8 @@ type ScriptEditorResult struct {
 }
 
 // loadScripts loads all available scripts
-func loadScripts() tea.Cmd {
+func loadScripts(scriptService *services.ScriptService) tea.Cmd {
 	return func() tea.Msg {
-		// Create script service and find all scripts
-		scriptService, err := services.NewScriptService()
-		if err != nil {
-			return ErrorMsg(fmt.Errorf("failed to create script service: %w", err))
-		}
-
 		scripts, err := scriptService.FindAllScripts()
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))

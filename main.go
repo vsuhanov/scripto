@@ -2,31 +2,265 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
-  "log"
+	"strings"
 
-	"scripto/commands"
+	"scripto/internal/script"
+	"scripto/internal/services"
+	"scripto/internal/tui"
 )
 
-// Version information (set during build)
 var version = "dev"
 
 func configureLogger() {
 	logFilePath := "/tmp/scripto.log"
 	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
-		log.Fatalf("Error creating log file: %v", err)
+		fmt.Fprintf(os.Stderr, "Error creating log file: %v\n", err)
+		os.Exit(1)
 	}
 	log.SetOutput(logFile)
 }
 
 func main() {
-  configureLogger()
-	// Handle version flag
+	configureLogger()
+
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
 		fmt.Printf("scripto version %s\n", version)
 		return
 	}
 
-	commands.Execute()
+	container, err := services.NewContainer()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	handleCommand(container, os.Args[1:])
+}
+
+func handleCommand(container *services.Container, args []string) {
+	if len(args) > 0 && args[0] == "__complete" {
+		handleCompletion(container, args[1:])
+		container.TerminalService.ExitBuiltinComplete()
+	}
+
+	if len(args) > 0 && args[0] == "install" {
+		if err := handleInstall(container); err != nil {
+			container.TerminalService.ExitWithError(err.Error())
+		}
+		return
+	}
+
+	if len(args) == 0 {
+		if err := tui.RunApp(container, tui.StartAtMainList); err != nil {
+			container.TerminalService.ExitWithError(err.Error())
+		}
+		return
+	}
+
+	if args[0] == "add" {
+		if err := tui.RunApp(container, tui.StartAtAdd); err != nil {
+			container.TerminalService.ExitWithError(err.Error())
+		}
+		return
+	}
+
+	if err := executeScript(container, args); err != nil {
+		container.TerminalService.ExitWithError(err.Error())
+		return
+	}
+}
+
+func handleInstall(container *services.Container) error {
+	return container.ScriptService.SyncShortcuts()
+}
+
+func executeScript(container *services.Container, userArgs []string) error {
+	scriptName, scriptArgs := parseScriptNameAndArgs(userArgs)
+
+	matchResult, err := container.ScriptService.Match(scriptName)
+	if err != nil {
+		return fmt.Errorf("failed to match script: %w", err)
+	}
+
+	switch matchResult.Type {
+	case script.ExactName, script.PartialCommand:
+		return executeFoundScript(container, matchResult, scriptArgs)
+	case script.NoMatch:
+		fullInput := strings.Join(userArgs, " ")
+		return handleNoMatch(container, fullInput)
+	default:
+		return fmt.Errorf("unknown match type")
+	}
+}
+
+func parseScriptNameAndArgs(userArgs []string) (string, []string) {
+	if len(userArgs) == 0 {
+		return "", []string{}
+	}
+
+	separatorIndex := -1
+	for i, arg := range userArgs {
+		if arg == "--" {
+			separatorIndex = i
+			break
+		}
+	}
+
+	if separatorIndex == -1 {
+		if len(userArgs) == 1 {
+			return userArgs[0], []string{}
+		}
+		return userArgs[0], userArgs[1:]
+	}
+
+	if separatorIndex == 0 {
+		return "", userArgs[1:]
+	}
+
+	scriptNameParts := userArgs[:separatorIndex]
+	scriptArgs := userArgs[separatorIndex+1:]
+
+	scriptName := strings.Join(scriptNameParts, " ")
+
+	return scriptName, scriptArgs
+}
+
+func executeFoundScript(container *services.Container, matchResult *script.MatchResult, scriptArgs []string) error {
+	processingResult, err := container.ExecutionService.ProcessScriptArguments(matchResult, scriptArgs)
+	if err != nil {
+		return err
+	}
+
+	if !processingResult.NeedsPlaceholderForm {
+		finalCommand, err := container.ExecutionService.PrepareDirectExecution(processingResult)
+		if err != nil {
+			return err
+		}
+		return container.TerminalService.ExecuteScript(finalCommand)
+	}
+
+	formResult, err := tui.RunPlaceholderForm(processingResult.Placeholders)
+	if err != nil {
+		return fmt.Errorf("failed to collect placeholder values: %w", err)
+	}
+
+	if formResult.Cancelled {
+		return fmt.Errorf("operation cancelled by user")
+	}
+
+	finalCommand, err := container.ExecutionService.PrepareExecution(matchResult, scriptArgs, formResult.Values)
+	if err != nil {
+		return err
+	}
+	return container.TerminalService.ExecuteScript(finalCommand)
+}
+
+func handleNoMatch(container *services.Container, input string) error {
+	scriptObj := container.ScriptService.CreateEmptyScript()
+
+	tempFilePath, err := container.ScriptService.CreateTempScriptFile(input)
+	if err != nil {
+		return fmt.Errorf("failed to create temp script file: %w", err)
+	}
+	scriptObj.FilePath = tempFilePath
+
+	fmt.Printf("Command '%s' not found. Create new script?\n", input)
+
+	result, err := tui.RunScriptEditor(scriptObj, true)
+	if err != nil {
+		return fmt.Errorf("TUI error: %w", err)
+	}
+
+	if result.Cancelled {
+		return fmt.Errorf("command not found: %s", input)
+	}
+
+	finalCommand := result.Command
+	if finalCommand == "" {
+		finalCommand = input
+	}
+
+	if err := container.ScriptService.SaveScript(result.Script, finalCommand, nil); err != nil {
+		return fmt.Errorf("failed to save script: %w", err)
+	}
+
+	fmt.Printf("Saved script successfully\n")
+
+	matchResult := &script.MatchResult{
+		Type:       script.ExactName,
+		Script:     result.Script,
+		Confidence: 1.0,
+	}
+
+	return executeFoundScript(container, matchResult, []string{})
+}
+
+func handleCompletion(container *services.Container, args []string) {
+	var toComplete string
+
+	if len(args) > 0 && args[len(args)-1] == "" {
+		toComplete = strings.Join(args[:len(args)-1], " ")
+	} else if len(args) > 0 {
+		toComplete = strings.Join(args, " ")
+	}
+
+	cleanToComplete := toComplete
+	if strings.HasPrefix(cleanToComplete, "\\\"") {
+		cleanToComplete = strings.TrimPrefix(cleanToComplete, "\\\"")
+	} else if strings.HasPrefix(cleanToComplete, "\"") {
+		cleanToComplete = strings.TrimPrefix(cleanToComplete, "\"")
+	}
+
+	suggestions := getCompletionSuggestions(container, cleanToComplete)
+
+	for _, suggestion := range suggestions {
+		fmt.Println(suggestion)
+	}
+}
+
+func getCompletionSuggestions(container *services.Container, toComplete string) []string {
+	separator := "\x1F"
+
+	allScripts, err := container.ScriptService.FindAllScripts()
+	if err != nil {
+		return nil
+	}
+
+	return convertScriptResultsToSuggestions(allScripts, separator, toComplete)
+}
+
+func convertScriptResultsToSuggestions(results []script.MatchResult, separator string, toComplete string) []string {
+	var suggestions []string
+	for _, result := range results {
+		if result.Script.Name != "" {
+			description := result.Script.Description
+			if description == "" {
+				description = result.Script.Description
+			}
+
+			name := result.Script.Name
+			if toComplete != "" {
+				if !strings.HasPrefix(name, toComplete) {
+				}
+			}
+
+			suggestions = append(suggestions, result.Script.Scope+separator+name+separator+description)
+		} else {
+			command := result.Script.FilePath
+			displayCommand := command
+
+			if toComplete != "" {
+				if !strings.HasPrefix(command, toComplete) {
+				}
+
+				displayCommand = command
+			}
+
+			suggestions = append(suggestions, result.Script.Scope+separator+displayCommand+separator+result.Script.FilePath)
+		}
+	}
+	return suggestions
 }

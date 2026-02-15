@@ -65,7 +65,7 @@ func NewModel() MainModel {
 // Init initializes the TUI model
 func (m MainModel) Init() tea.Cmd {
 	return tea.Batch(
-		loadScripts(),
+		loadScripts(m.scriptService),
 		tea.EnterAltScreen,
 	)
 }
@@ -329,9 +329,9 @@ func (m MainModel) performDelete() (tea.Model, tea.Cmd) {
 	}
 
 	m.statusMsg = "Script deleted successfully"
-	
+
 	// Reload scripts
-	return m, loadScripts()
+	return m, loadScripts(m.scriptService)
 }
 
 // View renders the TUI
