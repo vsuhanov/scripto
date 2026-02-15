@@ -45,9 +45,6 @@ type MainListScreen struct {
 	// Viewport for preview
 	viewport viewport.Model
 
-	// Screen interface state
-	result     ScreenResult
-	isComplete bool
 }
 
 // NewMainListScreen creates a new main list screen
@@ -71,15 +68,6 @@ func (m *MainListScreen) SetServices(svcs interface{}) {
 	}
 }
 
-// GetResult implements Screen interface
-func (m *MainListScreen) GetResult() ScreenResult {
-	return m.result
-}
-
-// IsComplete implements Screen interface
-func (m *MainListScreen) IsComplete() bool {
-	return m.isComplete
-}
 
 // SetStatusMessage sets the status message
 func (m *MainListScreen) SetStatusMessage(msg string) {
@@ -160,13 +148,9 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "q", "ctrl+c":
-		m.result = ScreenResult{
-			Action:     ActionExitApp,
-			ShouldExit: true,
-			ExitCode:   3,
+		return m, func() tea.Msg {
+			return ExitAppMsg{exitCode: 3, message: ""}
 		}
-		m.isComplete = true
-		return m, tea.Quit
 
 	case "?":
 		m.showHelp = !m.showHelp
@@ -183,14 +167,9 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if len(m.scripts) > 0 {
 			selected := m.scripts[m.selectedIdx]
-			m.result = ScreenResult{
-				Action:     ActionExecuteScript,
-				Data:       NewActionDataWithPath(selected.Script.FilePath),
-				ShouldExit: true,
-				ExitCode:   0,
+			return m, func() tea.Msg {
+				return ExecuteScriptMsg{scriptPath: selected.Script.FilePath}
 			}
-			m.isComplete = true
-			return m, tea.Quit
 		}
 
 	case "e":
@@ -248,12 +227,9 @@ func (m *MainListScreen) handleInlineEdit() (tea.Model, tea.Cmd) {
 	}
 
 	selected := m.scripts[m.selectedIdx]
-	m.result = ScreenResult{
-		Action: ActionEditScriptInline,
-		Data:   NewActionDataWithScript(selected.Script),
+	return m, func() tea.Msg {
+		return ShowScriptEditorMsg{script: selected.Script}
 	}
-	m.isComplete = true
-	return m, tea.Quit
 }
 
 // handleExternalEdit handles external editing request
@@ -270,14 +246,9 @@ func (m *MainListScreen) handleExternalEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.result = ScreenResult{
-		Action:     ActionEditScriptExternal,
-		Data:       NewActionDataWithPath(scriptPath),
-		ShouldExit: true,
-		ExitCode:   4,
+	return m, func() tea.Msg {
+		return EditScriptExternalMsg{scriptPath: scriptPath}
 	}
-	m.isComplete = true
-	return m, tea.Quit
 }
 
 // handleDeleteRequest handles delete confirmation request
@@ -293,12 +264,9 @@ func (m *MainListScreen) handleDeleteRequest() (tea.Model, tea.Cmd) {
 func (m *MainListScreen) handleImmediateDelete() (tea.Model, tea.Cmd) {
 	if len(m.scripts) > 0 {
 		selected := m.scripts[m.selectedIdx]
-		m.result = ScreenResult{
-			Action: ActionDeleteScript,
-			Data:   NewActionDataWithScript(selected.Script),
+		return m, func() tea.Msg {
+			return DeleteScriptMsg{script: selected.Script}
 		}
-		// Don't mark as complete, let flow controller handle it
-		return m, nil
 	}
 	return m, nil
 }
@@ -310,9 +278,8 @@ func (m *MainListScreen) handleDeleteConfirmation(msg tea.KeyMsg) (tea.Model, te
 		m.confirmDelete = false
 		if len(m.scripts) > 0 {
 			selected := m.scripts[m.selectedIdx]
-			m.result = ScreenResult{
-				Action: ActionDeleteScript,
-				Data:   NewActionDataWithScript(selected.Script),
+			return m, func() tea.Msg {
+				return DeleteScriptMsg{script: selected.Script}
 			}
 		}
 		return m, nil

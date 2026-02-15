@@ -35,9 +35,6 @@ type ScriptEditorScreen struct {
 	// Services
 	scriptService *services.ScriptService
 
-	// Screen interface state
-	result       ScreenResult
-	isComplete   bool
 	errorMessage string
 }
 
@@ -71,40 +68,13 @@ func (e *ScriptEditorScreen) SetServices(svcs interface{}) {
 	}
 }
 
-// GetResult implements Screen interface
-func (e *ScriptEditorScreen) GetResult() ScreenResult {
-	return e.result
-}
-
-// IsComplete implements Screen interface
-func (e *ScriptEditorScreen) IsComplete() bool {
-	return e.isComplete
-}
-
-// GetEditorResult returns the editor-specific result
-func (e *ScriptEditorScreen) GetEditorResult() ScriptEditorResult {
-	if e.result.Action == ActionScriptEditorCancel {
-		return ScriptEditorResult{Cancelled: true}
-	}
-
-	// Get values from components
-	name := e.nameInput.Value()
-	description := e.descriptionInput.Value()
-	command := e.commandTextarea.Value()
-	scope := e.scopeInput.Value()
-
-	script := entities.Script{
-		Name:        name,
-		Description: description,
-		FilePath:    e.originalScript.FilePath,
-		Scope:       scope,
-	}
-
-	return ScriptEditorResult{
-		Script:    script,
-		Command:   command,
-		Cancelled: false,
-	}
+// GetEditorValues returns the current editor field values
+func (e *ScriptEditorScreen) GetEditorValues() (name, description, command, scope string) {
+	name = e.nameInput.Value()
+	description = e.descriptionInput.Value()
+	command = e.commandTextarea.Value()
+	scope = e.scopeInput.Value()
+	return
 }
 
 // GetOriginalScript returns the original script
@@ -213,12 +183,10 @@ func (e *ScriptEditorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		e.result = ScreenResult{
-			Action: ActionScriptEditorCancel,
-		}
-		e.isComplete = true
 		e.active = false
-		return e, tea.Quit
+		return e, func() tea.Msg {
+			return NavigateBackMsg{}
+		}
 
 	case "tab":
 		e.focusedField = (e.focusedField + 1) % EditorScreenFieldCount
@@ -232,19 +200,26 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		if e.focusedField == EditorScreenFieldSave {
-			e.result = ScreenResult{
-				Action: ActionScriptEditorSave,
-			}
-			e.isComplete = true
 			e.active = false
-			return e, tea.Quit
+			name, description, command, scope := e.GetEditorValues()
+			script := entities.Script{
+				Name:        name,
+				Description: description,
+				FilePath:    e.originalScript.FilePath,
+				Scope:       scope,
+			}
+			return e, func() tea.Msg {
+				return SaveScriptMsg{
+					script:   script,
+					command:  command,
+					original: &e.originalScript,
+				}
+			}
 		} else if e.focusedField == EditorScreenFieldCancel {
-			e.result = ScreenResult{
-				Action: ActionScriptEditorCancel,
-			}
-			e.isComplete = true
 			e.active = false
-			return e, tea.Quit
+			return e, func() tea.Msg {
+				return NavigateBackMsg{}
+			}
 		}
 		// For input fields, let them handle enter
 		fallthrough

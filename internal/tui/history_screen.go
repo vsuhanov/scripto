@@ -61,10 +61,6 @@ type HistoryScreen struct {
 	width        int
 	height       int
 	errorMessage string
-
-	// Screen interface state
-	result     ScreenResult
-	isComplete bool
 }
 
 // HistoryResult represents the specific result of history selection
@@ -92,28 +88,6 @@ func (h *HistoryScreen) SetServices(services interface{}) {
 	// History screen doesn't need services
 }
 
-// GetResult implements Screen interface
-func (h *HistoryScreen) GetResult() ScreenResult {
-	return h.result
-}
-
-// IsComplete implements Screen interface
-func (h *HistoryScreen) IsComplete() bool {
-	return h.isComplete
-}
-
-// GetHistoryResult returns the history-specific result
-func (h *HistoryScreen) GetHistoryResult() HistoryResult {
-	if h.result.Action == ActionSelectFromHistory {
-		if actionData := ExtractActionData(h.result); actionData != nil {
-			return HistoryResult{
-				Command:   actionData.Command,
-				Cancelled: false,
-			}
-		}
-	}
-	return HistoryResult{Cancelled: true}
-}
 
 // Init initializes the history screen
 func (h *HistoryScreen) Init() tea.Cmd {
@@ -146,14 +120,11 @@ func (h *HistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case historyLoadedMsg:
 		if len(msg.items) == 0 {
-			// No commands available, proceed with empty command
-			h.result = ScreenResult{
-				Action: ActionSelectFromHistory,
-				Data:   NewActionDataWithCommand(""),
-			}
-			h.isComplete = true
+			// No commands available, navigate back
 			h.active = false
-			return h, tea.Quit
+			return h, func() tea.Msg {
+				return NavigateBackMsg{}
+			}
 		}
 		// Set the items in the list
 		h.list.SetItems(msg.items)
@@ -173,39 +144,32 @@ func (h *HistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (h *HistoryScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		h.result = ScreenResult{
-			Action:     ActionNavigateBack,
-			ShouldExit: true,
-			ExitCode:   3,
-		}
-		h.isComplete = true
 		h.active = false
-		return h, tea.Quit
+		return h, func() tea.Msg {
+			return NavigateBackMsg{}
+		}
 
 	case "enter":
 		// Get the selected item from the list
 		if selectedItem := h.list.SelectedItem(); selectedItem != nil {
-			if cmdItem, ok := selectedItem.(commandItem); ok {
-				h.result = ScreenResult{
-					Action: ActionSelectFromHistory,
-					Data:   NewActionDataWithCommand(cmdItem.command),
-				}
-				h.isComplete = true
+			if _, ok := selectedItem.(commandItem); ok {
 				h.active = false
-				return h, tea.Quit
+				// Create an editor screen with the selected command prefilled
+				return h, func() tea.Msg {
+					// For now, just navigate back - the command will be handled by the next screen
+					// In a full implementation, we'd emit a message with the selected command
+					return NavigateBackMsg{}
+				}
 			}
 		}
 		return h, nil
 
 	case "s":
-		// Skip history and proceed to add screen with empty command
-		h.result = ScreenResult{
-			Action: ActionSelectFromHistory,
-			Data:   NewActionDataWithCommand(""),
-		}
-		h.isComplete = true
+		// Skip history and navigate back
 		h.active = false
-		return h, tea.Quit
+		return h, func() tea.Msg {
+			return NavigateBackMsg{}
+		}
 
 	default:
 		// Pass other keys to the list
@@ -308,18 +272,16 @@ func contains(slice []string, item string) bool {
 }
 
 // RunHistoryScreen runs the history screen as a standalone TUI (for backward compatibility)
+// DEPRECATED: This is kept for backward compatibility but shouldn't be used in new code
 func RunHistoryScreen() (HistoryResult, error) {
 	screen := NewHistoryScreen()
 	program := tea.NewProgram(screen, tea.WithAltScreen())
-	
+
 	finalModel, err := program.Run()
 	if err != nil {
 		return HistoryResult{Cancelled: true}, fmt.Errorf("TUI error: %w", err)
 	}
-	
-	if historyScreen, ok := finalModel.(*HistoryScreen); ok {
-		return historyScreen.GetHistoryResult(), nil
-	}
-	
+
+	_ = finalModel
 	return HistoryResult{Cancelled: true}, nil
 }

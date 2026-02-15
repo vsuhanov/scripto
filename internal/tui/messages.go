@@ -17,6 +17,45 @@ type (
 	StatusMsg        string
 )
 
+// Navigation messages
+type NavigateToScreenMsg struct {
+	screen tea.Model
+}
+
+type NavigateBackMsg struct{}
+
+type ExitAppMsg struct {
+	exitCode int
+	message  string
+}
+
+// Business action messages
+type ExecuteScriptMsg struct {
+	scriptPath string
+}
+
+type SaveScriptMsg struct {
+	script   entities.Script
+	command  string
+	original *entities.Script
+}
+
+type EditScriptExternalMsg struct {
+	scriptPath string
+}
+
+type DeleteScriptMsg struct {
+	script entities.Script
+}
+
+type RefreshScriptsMsg struct{}
+
+type ShowScriptEditorMsg struct {
+	script entities.Script
+}
+
+type ShowHistoryScreenMsg struct{}
+
 // ScriptEditorResult represents the result of the script editor
 type ScriptEditorResult struct {
 	Script    entities.Script

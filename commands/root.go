@@ -28,17 +28,42 @@ Examples:
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) == 0 {
-			// No arguments - launch TUI using RootFlowController
-			flowController, err := tui.NewRootFlowController()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to create flow controller: %v\n", err)
-				os.Exit(1)
-			}
-
-			result, err := flowController.Run()
+			// No arguments - launch TUI with main list screen
+			result, err := tui.RunApp(tui.StartAtMainList)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
 				os.Exit(1)
+			}
+
+			if result.ExitCode == 4 {
+				// Exit code 4 means external edit was requested
+				if err := writeScriptPathForEditor(result.ScriptPath); err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					os.Exit(1)
+				}
+			} else if result.ExitCode == 0 {
+				// Exit code 0 means script execution was requested
+				// The script path is in result.ScriptPath
+				// This is handled by the shell wrapper
+			}
+
+			os.Exit(result.ExitCode)
+		}
+
+		// Check if first arg is "add" for history screen shortcut
+		if args[0] == "add" {
+			result, err := tui.RunApp(tui.StartAtHistory)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
+				os.Exit(1)
+			}
+
+			if result.ExitCode == 4 {
+				// Exit code 4 means external edit was requested
+				if err := writeScriptPathForEditor(result.ScriptPath); err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					os.Exit(1)
+				}
 			}
 
 			os.Exit(result.ExitCode)
