@@ -16,11 +16,11 @@ import (
 // MainModel represents the main TUI state
 type MainModel struct {
 	// Core data
-	scripts       []script.MatchResult
-	selectedIdx   int
-	config        storage.Config
-	configPath    string
-	scriptService *services.ScriptService
+	scripts    []script.MatchResult
+	selectedIdx int
+	config     storage.Config
+	configPath string
+	container  *services.Container
 
 	// UI state
 	width  int
@@ -53,19 +53,19 @@ type (
 
 // NewModel creates a new TUI model
 func NewModel() MainModel {
-	scriptService, _ := services.NewScriptService()
+	container, _ := services.NewContainer()
 	return MainModel{
-		focusedPane:   "list",
-		ready:         false,
-		viewport:      viewport.New(0, 0),
-		scriptService: scriptService,
+		focusedPane: "list",
+		ready:       false,
+		viewport:    viewport.New(0, 0),
+		container:   container,
 	}
 }
 
 // Init initializes the TUI model
 func (m MainModel) Init() tea.Cmd {
 	return tea.Batch(
-		loadScripts(m.scriptService),
+		loadScripts(m.container.ScriptService),
 		tea.EnterAltScreen,
 	)
 }
@@ -234,8 +234,8 @@ func (m MainModel) handleInlineEdit() (tea.Model, tea.Cmd) {
 
 		if !result.Cancelled {
 			// Save the updated script
-			if m.scriptService != nil {
-				err := m.scriptService.SaveScript(result.Script, result.Command, &selected.Script)
+			if m.container != nil {
+				err := m.container.ScriptService.SaveScript(result.Script, result.Command, &selected.Script)
 				if err != nil {
 					return ErrorMsg(err)
 				}
@@ -321,8 +321,8 @@ func (m MainModel) performDelete() (tea.Model, tea.Cmd) {
 	selected := m.scripts[m.selectedIdx]
 
 	// Use script service to delete
-	if m.scriptService != nil {
-		if err := m.scriptService.DeleteScript(selected.Script); err != nil {
+	if m.container != nil {
+		if err := m.container.ScriptService.DeleteScript(selected.Script); err != nil {
 			m.statusMsg = fmt.Sprintf("Error deleting script: %v", err)
 			return m, nil
 		}
@@ -331,7 +331,7 @@ func (m MainModel) performDelete() (tea.Model, tea.Cmd) {
 	m.statusMsg = "Script deleted successfully"
 
 	// Reload scripts
-	return m, loadScripts(m.scriptService)
+	return m, loadScripts(m.container.ScriptService)
 }
 
 // View renders the TUI
@@ -437,8 +437,8 @@ Press ? again to return to the script list.
 
 // getScopeDisplayName returns a user-friendly display name for a scope
 func (m MainModel) getScopeDisplayName(scope string) string {
-	if m.scriptService != nil {
-		return m.scriptService.GetScopeDisplayName(scope)
+	if m.container != nil {
+		return m.container.ScriptService.GetScopeDisplayName(scope)
 	}
 	return scope
 }

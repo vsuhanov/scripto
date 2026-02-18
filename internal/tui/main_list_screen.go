@@ -5,7 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport" tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"scripto/internal/script"
@@ -14,19 +15,21 @@ import (
 )
 
 type MainListScreen struct {
-	scripts       []script.MatchResult
-	selectedIdx   int
-	config        storage.Config
-	configPath    string
-	scriptService *services.ScriptService
+	scripts    []script.MatchResult
+	selectedIdx int
+	config     storage.Config
+	configPath string
+	container  *services.Container
 
-	width  int
-	height int
-	ready  bool
-	err    error
-
+	width         int
+	maxWidth      int
+	visibleHeight int
+	height        int
+	ready         bool
+	err           error
 
 	showHelp      bool
+	focusedPane   string
 	editMode      bool
 	externalEdit  bool
 	nameEditMode  bool
@@ -36,10 +39,9 @@ type MainListScreen struct {
 	quitting      bool
 
 	viewport viewport.Model
-
 }
 
-func NewMainListScreen() (*MainListScreen, error) {
+func NewMainListScreen(container *services.Container) (*MainListScreen, error) {
 	configPath, err := storage.GetConfigPath()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config path: %w", err)
@@ -47,17 +49,11 @@ func NewMainListScreen() (*MainListScreen, error) {
 
 	return &MainListScreen{
 		configPath:  configPath,
+		container:   container,
 		focusedPane: "list",
 		viewport:    viewport.New(50, 10),
 	}, nil
 }
-
-func (m *MainListScreen) SetServices(svcs interface{}) {
-	if scriptService, ok := svcs.(*services.ScriptService); ok {
-		m.scriptService = scriptService
-	}
-}
-
 
 func (m *MainListScreen) SetStatusMessage(msg string) {
 	m.statusMsg = msg
@@ -69,7 +65,7 @@ func (m *MainListScreen) RefreshScripts() {
 
 func (m *MainListScreen) Init() tea.Cmd {
 	return tea.Batch(
-		loadScripts(m.scriptService),
+		loadScripts(m.container.ScriptService),
 		tea.EnterAltScreen,
 	)
 }
@@ -290,12 +286,12 @@ func (m *MainListScreen) formatPreviewContent(script script.MatchResult) string 
 	sections = append(sections, metadata)
 
 	if script.Script.Description != "" {
-		description := m.formatPreviewDescription(script.Script.Description, maxWidth)
+		description := m.formatPreviewDescription(script.Script.Description, m.maxWidth)
 		sections = append(sections, description)
 	}
 
 	if script.Script.FilePath != "" {
-		fileContent := m.formatPreviewFileContent(script.Script.FilePath, maxWidth)
+		fileContent := m.formatPreviewFileContent(script.Script.FilePath, m.maxWidth)
 		sections = append(sections, fileContent)
 	}
 
@@ -323,7 +319,7 @@ func (m *MainListScreen) formatPreviewMetadata(selected script.MatchResult) stri
 	} else {
 		scopeLabel := m.getScopeDisplayName(selected.Script.Scope)
 		metadata = append(metadata, fmt.Sprintf("Scope: %s", scopeLabel))
-		
+
 		dir := selected.Script.Scope
 		if len(dir) > 50 {
 			dir = "..." + dir[len(dir)-47:]
@@ -377,8 +373,8 @@ func (m *MainListScreen) formatPreviewFileContent(filePath string, maxWidth int)
 }
 
 func (m *MainListScreen) getScopeDisplayName(scope string) string {
-	if m.scriptService != nil {
-		return m.scriptService.GetScopeDisplayName(scope)
+	if m.container != nil {
+		return m.container.ScriptService.GetScopeDisplayName(scope)
 	}
 	return scope
 }
@@ -461,7 +457,7 @@ func (m *MainListScreen) renderMainView() string {
 func (m *MainListScreen) renderHeader() string {
 	title := TitleStyle.Render("Scripto - Script Manager")
 	help := HelpStyle.Render("? for help • q to quit")
-	
+
 	return HeaderStyle.Width(m.width).Render(
 		lipgloss.JoinHorizontal(
 			lipgloss.Center,
@@ -500,10 +496,9 @@ func (m *MainListScreen) renderList(width, height int) string {
 
 	content := strings.Join(items, "\n")
 
-
 	lines := strings.Split(content, "\n")
-	if len(lines) > visibleHeight {
-		start, end := m.calculateScrollWindow(lines, visibleHeight)
+	if len(lines) > m.visibleHeight {
+		start, end := m.calculateScrollWindow(lines, m.visibleHeight)
 		content = strings.Join(lines[start:end], "\n")
 	}
 
@@ -536,7 +531,7 @@ func (m *MainListScreen) renderFooter() string {
 	}
 
 	status := StatusStyle.Render(statusText)
-	
+
 	var keyHints string
 	if m.confirmDelete {
 		keyHints = HelpStyle.Render("y/n: confirm/cancel")
@@ -627,12 +622,12 @@ func (m *MainListScreen) formatDirectoryName(dir string) string {
 	if dir == "global" {
 		return "Global Scripts"
 	}
-	
+
 	fullPath := dir
-	
+
 	if len(fullPath) > 100 {
 	}
-	
+
 	return fullPath
 }
 
@@ -697,3 +692,4 @@ func max(a, b int) int {
 	}
 	return b
 }
+

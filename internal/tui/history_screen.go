@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"io"
-	"os"
 	"scripto/internal/services"
 	"strings"
 
@@ -53,7 +52,7 @@ type HistoryScreen struct {
 	width        int
 	height       int
 	errorMessage string
-	services     *services.Container
+	container     *services.Container
 }
 
 type HistoryResult struct {
@@ -65,16 +64,16 @@ type historyLoadedMsg struct {
 	items []list.Item
 }
 
-func NewHistoryScreen(services *services.Container) *HistoryScreen {
+func NewHistoryScreen(container *services.Container) *HistoryScreen {
 	return &HistoryScreen{
-		services: services,
+		container: container,
 		active:   true,
 		width:    80,
 		height:   24,
 	}
 }
 
-func (h *HistoryScreen) Init() tea.Cmd {
+func (h *HistoryScreen) Init() tea.Cmd { // tea.Model
 	delegate := historyListItemCustomDelegate{}
 	h.list = list.New([]list.Item{}, delegate, h.width-4, h.height-8)
 	h.list.Title = "Select Command from History"
@@ -87,7 +86,7 @@ func (h *HistoryScreen) Init() tea.Cmd {
 	)
 }
 
-func (h *HistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (h *HistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) { // tea.Model
 	if !h.active {
 		return h, nil
 	}
@@ -117,6 +116,32 @@ func (h *HistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	h.list, cmd = h.list.Update(msg)
 	return h, cmd
+}
+
+func (h *HistoryScreen) View() string { // tea.Model
+	if !h.active {
+		return ""
+	}
+
+	popupWidth := min(80, h.width-8)
+	popupHeight := min(30, h.height-4)
+
+	var content string
+
+	if h.errorMessage != "" {
+		errorText := ErrorStyle.Render(fmt.Sprintf("Error: %s", h.errorMessage))
+		content = errorText + "\n\nPress any key to continue with empty command..."
+	} else {
+		content = h.list.View()
+
+		helpText := HelpStyle.Render("↵: select • s: skip • esc: cancel")
+		content += "\n\n" + helpText
+	}
+
+	return PopupStyle.
+		Width(popupWidth).
+		Height(popupHeight).
+		Render(content)
 }
 
 func (h *HistoryScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -151,35 +176,9 @@ func (h *HistoryScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (h *HistoryScreen) View() string {
-	if !h.active {
-		return ""
-	}
-
-	popupWidth := min(80, h.width-8)
-	popupHeight := min(30, h.height-4)
-
-	var content string
-
-	if h.errorMessage != "" {
-		errorText := ErrorStyle.Render(fmt.Sprintf("Error: %s", h.errorMessage))
-		content = errorText + "\n\nPress any key to continue with empty command..."
-	} else {
-		content = h.list.View()
-
-		helpText := HelpStyle.Render("↵: select • s: skip • esc: cancel")
-		content += "\n\n" + helpText
-	}
-
-	return PopupStyle.
-		Width(popupWidth).
-		Height(popupHeight).
-		Render(content)
-}
-
 func (h *HistoryScreen) loadHistory() tea.Cmd {
 	return func() tea.Msg {
-		commands := h.services.HistoryService.GetHistoryCommands()
+		commands := h.container.HistoryService.GetHistoryCommands()
 
 		items := make([]list.Item, len(commands))
 		for i, command := range commands {

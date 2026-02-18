@@ -186,6 +186,7 @@ func getScopePriority(scope string) int {
 	if strings.HasPrefix(cwd, scope+string(filepath.Separator)) {
 	}
 
+	return 1
 }
 
 func max(a, b float64) float64 {

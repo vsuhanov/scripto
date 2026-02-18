@@ -9,31 +9,25 @@ import (
 )
 
 type RootModel struct {
-	scriptService    *services.ScriptService
-	executionService *services.ExecutionService
-	terminalService  *services.TerminalService
-	currentScreen    tea.Model
-	screenStack      []tea.Model
-	width            int
-	height           int
+	container    *services.Container
+	currentScreen tea.Model
+	screenStack  []tea.Model
+	width        int
+	height       int
 }
 
 func NewRootModel(container *services.Container) (*RootModel, error) {
-	mainListScreen, err := NewMainListScreen()
+	mainListScreen, err := NewMainListScreen(container)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create main list screen: %w", err)
 	}
 
-	mainListScreen.SetServices(container.ScriptService)
-
 	return &RootModel{
-		scriptService:    container.ScriptService,
-		executionService: container.ExecutionService,
-		terminalService:  container.TerminalService,
-		currentScreen:    mainListScreen,
-		screenStack:      []tea.Model{},
-		width:            80,
-		height:           24,
+		container:    container,
+		currentScreen: mainListScreen,
+		screenStack:  []tea.Model{},
+		width:        80,
+		height:       24,
 	}, nil
 }
 
@@ -57,7 +51,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ExitAppMsg:
-		m.terminalService.ExitWithCode(msg.exitCode)
+		m.container.TerminalService.ExitWithCode(msg.exitCode)
 		return m, tea.Quit
 
 	case ExecuteScriptMsg:
@@ -67,8 +61,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleEditScriptExternal(msg.scriptPath)
 
 	case ShowScriptEditorMsg:
-		scriptEditor := NewScriptEditorScreen(msg.script, false)
-		scriptEditor.SetServices(m.scriptService)
+		scriptEditor := NewScriptEditorScreen(msg.script, false, m.container)
 		m.screenStack = append(m.screenStack, m.currentScreen)
 		m.currentScreen = scriptEditor
 		return m, scriptEditor.Init()
@@ -77,8 +70,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleSaveScript(msg.script, msg.command, msg.original)
 
 	case ShowHistoryScreenMsg:
-		historyScreen := NewHistoryScreen()
-		historyScreen.SetServices(m.scriptService)
+		historyScreen := NewHistoryScreen(m.container)
 		m.screenStack = append(m.screenStack, m.currentScreen)
 		m.currentScreen = historyScreen
 		return m, historyScreen.Init()
@@ -92,7 +84,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.terminalService.ExitWithCode(ExitBuiltinComplete)
+		m.container.TerminalService.ExitWithCode(ExitBuiltinComplete)
 		return m, tea.Quit
 
 	case RefreshScriptsMsg:
@@ -129,22 +121,22 @@ func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
 			return ErrorMsg(fmt.Errorf("no script path provided for execution"))
 		}
 
-		matchResult, err := m.scriptService.FindScriptByFilePath(scriptPath)
+		matchResult, err := m.container.ScriptService.FindScriptByFilePath(scriptPath)
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to find script: %w", err))
 		}
 
-		processingResult, err := m.executionService.ProcessScriptArguments(matchResult, []string{})
+		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(matchResult, []string{})
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
 		}
 
 		if !processingResult.NeedsPlaceholderForm {
-			finalCommand, err := m.executionService.PrepareDirectExecution(processingResult)
+			finalCommand, err := m.container.ExecutionService.PrepareDirectExecution(processingResult)
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
 			}
-			if err := m.terminalService.ExecuteScript(finalCommand); err != nil {
+			if err := m.container.TerminalService.ExecuteScript(finalCommand); err != nil {
 				return ErrorMsg(err)
 			}
 		} else {
@@ -157,11 +149,11 @@ func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
 				return ErrorMsg(fmt.Errorf("operation cancelled by user"))
 			}
 
-			finalCommand, err := m.executionService.PrepareExecution(matchResult, []string{}, formResult.Values)
+			finalCommand, err := m.container.ExecutionService.PrepareExecution(matchResult, []string{}, formResult.Values)
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
 			}
-			if err := m.terminalService.ExecuteScript(finalCommand); err != nil {
+			if err := m.container.TerminalService.ExecuteScript(finalCommand); err != nil {
 				return ErrorMsg(err)
 			}
 		}
@@ -176,7 +168,7 @@ func (m *RootModel) handleEditScriptExternal(scriptPath string) tea.Cmd {
 			return ErrorMsg(fmt.Errorf("no script path provided for external edit"))
 		}
 
-		if err := m.terminalService.EditScriptExternal(scriptPath); err != nil {
+		if err := m.container.TerminalService.EditScriptExternal(scriptPath); err != nil {
 			return ErrorMsg(err)
 		}
 
@@ -186,7 +178,7 @@ func (m *RootModel) handleEditScriptExternal(scriptPath string) tea.Cmd {
 
 func (m *RootModel) handleSaveScript(script entities.Script, command string, original *entities.Script) tea.Cmd {
 	return func() tea.Msg {
-		if err := m.scriptService.SaveScript(script, command, original); err != nil {
+		if err := m.container.ScriptService.SaveScript(script, command, original); err != nil {
 			return ErrorMsg(fmt.Errorf("error saving script: %w", err))
 		}
 
