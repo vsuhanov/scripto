@@ -7,23 +7,10 @@ import (
 	"scripto/internal/services"
 )
 
-type StartMode int
-
-const (
-	StartAtMainList StartMode = iota
-	StartAtAdd
-)
-
 func RunApp(container *services.Container, mode StartMode) error {
-	rootModel, err := NewRootModel(container)
+	rootModel, err := NewRootModel(container, mode)
 	if err != nil {
 		return err
-	}
-
-	if mode == StartAtAdd {
-		historyScreen := NewHistoryScreen(container)
-		rootModel.screenStack = append(rootModel.screenStack, rootModel.currentScreen)
-		rootModel.currentScreen = historyScreen
 	}
 
 	program := tea.NewProgram(rootModel, tea.WithAltScreen())

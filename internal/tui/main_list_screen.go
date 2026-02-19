@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 
@@ -12,14 +13,16 @@ import (
 	"scripto/internal/script"
 	"scripto/internal/services"
 	"scripto/internal/storage"
+
+	"unicode/utf8"
 )
 
 type MainListScreen struct {
-	scripts    []script.MatchResult
-	selectedIdx int
-	config     storage.Config
-	configPath string
-	container  *services.Container
+	scripts           []script.MatchResult
+	selectedItemIndex int
+	config            storage.Config
+	configPath        string
+	container         *services.Container
 
 	width         int
 	maxWidth      int
@@ -80,9 +83,13 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		footerHeight := 3
 		availableHeight := msg.Height - headerHeight - footerHeight
 
+		log.Printf("WindowSize - Width: %d, Height: %d, HeaderHeight: %d, FooterHeight: %d, AvailableHeight: %d, ListWidth: %d, PreviewWidth: %d", msg.Width, msg.Height, headerHeight, footerHeight, availableHeight, min(50, msg.Width/2), msg.Width-min(50, msg.Width/2)-4)
+
 		listWidth := min(50, msg.Width/2)
 		previewWidth := msg.Width - listWidth - 4
 
+		m.visibleHeight = availableHeight
+		m.maxWidth = previewWidth
 		m.viewport.Width = previewWidth
 		m.viewport.Height = availableHeight
 		return m, nil
@@ -90,8 +97,8 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ScriptsLoadedMsg:
 		m.scripts = []script.MatchResult(msg)
 		m.ready = true
-		if len(m.scripts) > 0 && m.selectedIdx >= len(m.scripts) {
-			m.selectedIdx = 0
+		if len(m.scripts) > 0 && m.selectedItemIndex >= len(m.scripts) {
+			m.selectedItemIndex = 0
 		}
 		return m, m.updatePreview()
 
@@ -111,6 +118,22 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+func (m *MainListScreen) View() string {
+	if !m.ready {
+		return LoadingStyle.Render("Loading scripts...")
+	}
+
+	if m.err != nil {
+		return ErrorStyle.Render(fmt.Sprintf("Error: %v", m.err))
+	}
+
+	if m.showHelp {
+		return m.renderHelp()
+	}
+
+	return m.renderMainView()
 }
 
 func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -145,7 +168,7 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		if len(m.scripts) > 0 {
-			selected := m.scripts[m.selectedIdx]
+			selected := m.scripts[m.selectedItemIndex]
 			return m, func() tea.Msg {
 				return ExecuteScriptMsg{scriptPath: selected.Script.FilePath}
 			}
@@ -165,25 +188,25 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "j", "down":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
-			m.selectedIdx = min(m.selectedIdx+1, len(m.scripts)-1)
+			m.selectedItemIndex = min(m.selectedItemIndex+1, len(m.scripts)-1)
 			return m, m.updatePreview()
 		}
 
 	case "k", "up":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
-			m.selectedIdx = max(0, m.selectedIdx-1)
+			m.selectedItemIndex = max(0, m.selectedItemIndex-1)
 			return m, m.updatePreview()
 		}
 
 	case "g":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
-			m.selectedIdx = 0
+			m.selectedItemIndex = 0
 			return m, m.updatePreview()
 		}
 
 	case "G":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
-			m.selectedIdx = len(m.scripts) - 1
+			m.selectedItemIndex = len(m.scripts) - 1
 			return m, m.updatePreview()
 		}
 	}
@@ -202,7 +225,7 @@ func (m *MainListScreen) handleInlineEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	selected := m.scripts[m.selectedIdx]
+	selected := m.scripts[m.selectedItemIndex]
 	return m, func() tea.Msg {
 		return ShowScriptEditorMsg{script: selected.Script}
 	}
@@ -213,7 +236,7 @@ func (m *MainListScreen) handleExternalEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	selected := m.scripts[m.selectedIdx]
+	selected := m.scripts[m.selectedItemIndex]
 	scriptPath := selected.Script.FilePath
 
 	if scriptPath == "" {
@@ -236,7 +259,7 @@ func (m *MainListScreen) handleDeleteRequest() (tea.Model, tea.Cmd) {
 
 func (m *MainListScreen) handleImmediateDelete() (tea.Model, tea.Cmd) {
 	if len(m.scripts) > 0 {
-		selected := m.scripts[m.selectedIdx]
+		selected := m.scripts[m.selectedItemIndex]
 		return m, func() tea.Msg {
 			return DeleteScriptMsg{script: selected.Script}
 		}
@@ -249,7 +272,7 @@ func (m *MainListScreen) handleDeleteConfirmation(msg tea.KeyMsg) (tea.Model, te
 	case "y", "Y":
 		m.confirmDelete = false
 		if len(m.scripts) > 0 {
-			selected := m.scripts[m.selectedIdx]
+			selected := m.scripts[m.selectedItemIndex]
 			return m, func() tea.Msg {
 				return DeleteScriptMsg{script: selected.Script}
 			}
@@ -265,12 +288,12 @@ func (m *MainListScreen) handleDeleteConfirmation(msg tea.KeyMsg) (tea.Model, te
 }
 
 func (m *MainListScreen) updatePreview() tea.Cmd {
-	if len(m.scripts) == 0 || m.selectedIdx >= len(m.scripts) {
+	if len(m.scripts) == 0 || m.selectedItemIndex >= len(m.scripts) {
 		m.viewport.SetContent("")
 		return nil
 	}
 
-	selected := m.scripts[m.selectedIdx]
+	selected := m.scripts[m.selectedItemIndex]
 	content := m.formatPreviewContent(selected)
 	m.viewport.SetContent(content)
 	return nil
@@ -410,42 +433,26 @@ func (m *MainListScreen) wrapText(text string, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m *MainListScreen) View() string {
-	if !m.ready {
-		return LoadingStyle.Render("Loading scripts...")
-	}
-
-	if m.err != nil {
-		return ErrorStyle.Render(fmt.Sprintf("Error: %v", m.err))
-	}
-
-	if m.showHelp {
-		return m.renderHelp()
-	}
-
-	return m.renderMainView()
-}
-
 func (m *MainListScreen) renderMainView() string {
-	headerHeight := 3
-	footerHeight := 3
-	availableHeight := m.height - headerHeight - footerHeight
 
 	listWidth := min(50, m.width/2)
 	previewWidth := m.width - listWidth - 4
 
 	header := m.renderHeader()
-	listView := m.renderList(listWidth, availableHeight)
-	previewView := m.renderPreview(previewWidth, availableHeight)
 	footer := m.renderFooter()
+	availableHeight := m.height - lipgloss.Height(header) - lipgloss.Height(footer)
+	listView := m.renderList(listWidth, availableHeight)
+	log.Printf("RenderMainView - Width: %d, Height: %d, AvailableHeight: %d, ListWidth: %d, PreviewWidth: %d", m.width, m.height, availableHeight, listWidth, previewWidth)
+	// previewView := m.renderPreview(previewWidth, availableHeight)
 
 	mainContent := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		listView,
-		" ",
-		previewView,
+		// " ",
+		// previewView,
 	)
 
+	// return mainContent
 	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
@@ -457,18 +464,22 @@ func (m *MainListScreen) renderMainView() string {
 func (m *MainListScreen) renderHeader() string {
 	title := TitleStyle.Render("Scripto - Script Manager")
 	help := HelpStyle.Render("? for help • q to quit")
+	log.Printf("Header - Width: %d, TitleWidth: %d, HelpWidth: %d, Spacing: %d", m.width, lipgloss.Width(title), lipgloss.Width(help), max(0, m.width-lipgloss.Width(title)-lipgloss.Width(help)))
 
-	return HeaderStyle.Width(m.width).Render(
-		lipgloss.JoinHorizontal(
-			lipgloss.Center,
-			title,
-			strings.Repeat(" ", max(0, m.width-lipgloss.Width(title)-lipgloss.Width(help))),
-			help,
-		),
-	)
+	return title
+	// return HeaderStyle.Width(m.width).Height(3).Render(
+	// 	lipgloss.JoinHorizontal(
+	// 		lipgloss.Center,
+	// 		title,
+	// 		strings.Repeat(" ", max(0, m.width-lipgloss.Width(title)-lipgloss.Width(help))),
+	// 		help,
+	// 	),
+	// )
 }
 
 func (m *MainListScreen) renderList(width, height int) string {
+	totalBorderHeight := 2
+	totalBorderWidth := 2
 	if len(m.scripts) == 0 {
 		emptyMsg := "No scripts found.\nUse 'scripto add' to create some scripts."
 		return ListStyle.
@@ -490,25 +501,37 @@ func (m *MainListScreen) renderList(width, height int) string {
 			currentScope = script.Script.Scope
 		}
 
-		item := m.formatScriptItem(script, i)
+		item := m.formatScriptItem(script, i, width-totalBorderWidth, 3)
 		items = append(items, item)
 	}
 
 	content := strings.Join(items, "\n")
 
+	contentHeight := max(1, height-totalBorderHeight)
 	lines := strings.Split(content, "\n")
-	if len(lines) > m.visibleHeight {
-		start, end := m.calculateScrollWindow(lines, m.visibleHeight)
-		content = strings.Join(lines[start:end], "\n")
+
+	if len(lines) > contentHeight {
+		start, end := m.calculateScrollWindow(lines, height-totalBorderHeight)
+		lines = lines[start:end]
+		content = strings.Join(lines, "\n")
 	}
 
-	style := ListStyle.Width(width).Height(height)
-
+	style := ListStyle.Width(width-totalBorderWidth).MaxWidth(width)
 	if m.focusedPane == "list" {
-		style = ListFocusedStyle.Width(width).Height(height)
+		style = ListFocusedStyle.Width(width-totalBorderWidth).MaxWidth(width)
 	}
 
-	return style.Render(content)
+	rendered := style.Render(content)
+	renderedHeight := lipgloss.Height(rendered)
+
+	for renderedHeight > contentHeight && len(lines) > 1 {
+		lines = lines[:len(lines)-1]
+		content = strings.Join(lines, "\n")
+		rendered = style.Render(content)
+		renderedHeight = lipgloss.Height(rendered)
+	}
+
+	return rendered
 }
 
 func (m *MainListScreen) renderPreview(width, height int) string {
@@ -575,7 +598,7 @@ Press ? or Esc to close this help.`
 	return HelpScreenStyle.Width(m.width).Height(m.height).Render(helpText)
 }
 
-func (m *MainListScreen) formatScriptItem(script script.MatchResult, index int) string {
+func (m *MainListScreen) formatScriptItem(script script.MatchResult, index int, maxWidth int, indent int) string {
 	var parts []string
 
 	scopeIndicator := FormatScopeIndicator(script.Script.Scope)
@@ -588,11 +611,15 @@ func (m *MainListScreen) formatScriptItem(script script.MatchResult, index int) 
 		displayName = m.truncateString(script.Script.FilePath, 60)
 	}
 
+	if utf8.RuneCountInString(displayName) > maxWidth {
+		displayName = m.truncateString(displayName, maxWidth-3 - indent) + "…"
+	}
+
 	parts = append(parts, displayName)
 
 	item := strings.Join(parts, " ")
 
-	if index == m.selectedIdx {
+	if index == m.selectedItemIndex {
 		return ListItemSelectedStyle.Render(item)
 	}
 
@@ -636,18 +663,23 @@ func (m *MainListScreen) calculateScrollWindow(lines []string, visibleHeight int
 
 	halfWindow := visibleHeight / 2
 	start := selectedLine - halfWindow
-	end := selectedLine + halfWindow
+	end := selectedLine + halfWindow + 1
 
 	if start < 0 {
 		start = 0
-		end = visibleHeight
 	}
 	if end > len(lines) {
 		end = len(lines)
-		start = end - visibleHeight
-		if start < 0 {
-			start = 0
+	}
+	if end-start < visibleHeight && len(lines) > visibleHeight {
+		if start > 0 {
+			start = end - visibleHeight
+		} else {
+			end = start + visibleHeight
 		}
+	}
+	if start < 0 {
+		start = 0
 	}
 
 	return start, end
@@ -655,13 +687,13 @@ func (m *MainListScreen) calculateScrollWindow(lines []string, visibleHeight int
 
 func (m *MainListScreen) findSelectedLine(lines []string) int {
 	scopeHeaders := 0
-	for i := 0; i <= m.selectedIdx && i < len(m.scripts); i++ {
+	for i := 0; i <= m.selectedItemIndex && i < len(m.scripts); i++ {
 		if i == 0 || m.scripts[i].Script.Scope != m.scripts[i-1].Script.Scope {
 			scopeHeaders++
 		}
 	}
 
-	estimatedLine := m.selectedIdx + scopeHeaders
+	estimatedLine := m.selectedItemIndex + scopeHeaders
 	if estimatedLine >= len(lines) {
 		estimatedLine = len(lines) - 1
 	}
@@ -692,4 +724,3 @@ func max(a, b int) int {
 	}
 	return b
 }
-

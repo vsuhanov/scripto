@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"log"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"scripto/entities"
@@ -9,25 +10,39 @@ import (
 )
 
 type RootModel struct {
-	container    *services.Container
+	container     *services.Container
 	currentScreen tea.Model
-	screenStack  []tea.Model
-	width        int
-	height       int
+	screenStack   []tea.Model
+	width         int
+	height        int
 }
 
-func NewRootModel(container *services.Container) (*RootModel, error) {
-	mainListScreen, err := NewMainListScreen(container)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create main list screen: %w", err)
+type StartMode int
+
+const (
+	StartAtMainList StartMode = iota
+	StartAtAdd
+)
+
+func NewRootModel(container *services.Container, startMode StartMode) (*RootModel, error) {
+	var initialScreen tea.Model
+	var err error
+
+	if startMode == StartAtAdd {
+		initialScreen = NewHistoryScreen(container)
+	} else {
+		initialScreen, err = NewMainListScreen(container)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create main list screen: %w", err)
+		}
 	}
 
 	return &RootModel{
-		container:    container,
-		currentScreen: mainListScreen,
-		screenStack:  []tea.Model{},
-		width:        80,
-		height:       24,
+		container:     container,
+		currentScreen: initialScreen,
+		screenStack:   []tea.Model{},
+		width:         80,
+		height:        24,
 	}, nil
 }
 
@@ -43,9 +58,10 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		log.Printf("RootModel WindowSize - Width: %d, Height: %d", msg.Width, msg.Height)
 		if model, ok := m.currentScreen.(tea.Model); ok {
-			updatedModel, cmd := model.Update(msg)
-			m.currentScreen = updatedModel
+			updatedScreen, cmd := model.Update(msg)
+			m.currentScreen = updatedScreen
 			return m, cmd
 		}
 		return m, nil
@@ -185,4 +201,3 @@ func (m *RootModel) handleSaveScript(script entities.Script, command string, ori
 		return NavigateBackMsg{}
 	}
 }
-
