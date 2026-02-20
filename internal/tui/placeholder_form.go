@@ -252,7 +252,7 @@ func RunPlaceholderForm(placeholders []args.PlaceholderValue) (PlaceholderFormRe
 	}
 
 	model := NewPlaceholderForm(placeholders)
-	p := tea.NewProgram(model)
+	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	finalModel, err := p.Run()
 	if err != nil {
