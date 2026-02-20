@@ -10,11 +10,12 @@ import (
 )
 
 type RootModel struct {
-	container     *services.Container
-	currentScreen tea.Model
-	screenStack   []tea.Model
-	width         int
-	height        int
+	container        *services.Container
+	currentScreen    tea.Model
+	screenStack      []tea.Model
+	width            int
+	height           int
+	pendingCommand   services.TerminalServiceCommand
 }
 
 type StartMode int
@@ -67,7 +68,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ExitAppMsg:
-		m.container.TerminalService.ExitWithCode(msg.exitCode)
+		m.pendingCommand = m.container.TerminalService.PrepareExit(msg.exitCode)
 		return m, tea.Quit
 
 	case ExecuteScriptMsg:
@@ -100,7 +101,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		m.container.TerminalService.ExitWithCode(ExitBuiltinComplete)
+		m.pendingCommand = m.container.TerminalService.PrepareExit(ExitBuiltinComplete)
 		return m, tea.Quit
 
 	case RefreshScriptsMsg:
@@ -147,13 +148,12 @@ func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
 			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
 		}
 
+		var finalCommand string
 		if !processingResult.NeedsPlaceholderForm {
-			finalCommand, err := m.container.ExecutionService.PrepareDirectExecution(processingResult)
+			var err error
+			finalCommand, err = m.container.ExecutionService.PrepareDirectExecution(processingResult)
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
-			}
-			if err := m.container.TerminalService.ExecuteScript(finalCommand); err != nil {
-				return ErrorMsg(err)
 			}
 		} else {
 			formResult, err := RunPlaceholderForm(processingResult.Placeholders)
@@ -165,15 +165,13 @@ func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
 				return ErrorMsg(fmt.Errorf("operation cancelled by user"))
 			}
 
-			finalCommand, err := m.container.ExecutionService.PrepareExecution(matchResult, []string{}, formResult.Values)
+			finalCommand, err = m.container.ExecutionService.PrepareExecution(matchResult, []string{}, formResult.Values)
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
 			}
-			if err := m.container.TerminalService.ExecuteScript(finalCommand); err != nil {
-				return ErrorMsg(err)
-			}
 		}
 
+		m.pendingCommand = m.container.TerminalService.PrepareScriptExecution(finalCommand)
 		return ExitAppMsg{exitCode: ExitSuccess, message: scriptPath}
 	}
 }
@@ -184,10 +182,7 @@ func (m *RootModel) handleEditScriptExternal(scriptPath string) tea.Cmd {
 			return ErrorMsg(fmt.Errorf("no script path provided for external edit"))
 		}
 
-		if err := m.container.TerminalService.EditScriptExternal(scriptPath); err != nil {
-			return ErrorMsg(err)
-		}
-
+		m.pendingCommand = m.container.TerminalService.PrepareExternalEditing(scriptPath)
 		return ExitAppMsg{exitCode: ExitExternalEditor, message: scriptPath}
 	}
 }
@@ -200,4 +195,8 @@ func (m *RootModel) handleSaveScript(script entities.Script, command string, ori
 
 		return NavigateBackMsg{}
 	}
+}
+
+func (m *RootModel) GetPendingCommand() services.TerminalServiceCommand {
+	return m.pendingCommand
 }

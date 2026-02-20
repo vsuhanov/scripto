@@ -14,6 +14,20 @@ const (
 	exitCodeExternalEditor  exitCode = 4
 )
 
+type TerminalServiceCommand interface{}
+
+type ExitCommand struct {
+	Code int
+}
+
+type ExecuteScriptCommand struct {
+	Command string
+}
+
+type EditScriptExternalCommand struct {
+	ScriptPath string
+}
+
 type TerminalService struct{}
 
 func NewTerminalService() *TerminalService {
@@ -67,4 +81,55 @@ func (ts *TerminalService) ExitWithCode(code int) {
 
 func (ts *TerminalService) exit(code int) {
 	os.Exit(code)
+}
+
+func (ts *TerminalService) PrepareExit(code int) TerminalServiceCommand {
+	return &ExitCommand{Code: code}
+}
+
+func (ts *TerminalService) PrepareScriptExecution(command string) TerminalServiceCommand {
+	return &ExecuteScriptCommand{Command: command}
+}
+
+func (ts *TerminalService) PrepareExternalEditing(scriptPath string) TerminalServiceCommand {
+	return &EditScriptExternalCommand{ScriptPath: scriptPath}
+}
+
+func (ts *TerminalService) ExecuteCommand(cmd TerminalServiceCommand) {
+	if cmd == nil {
+		return
+	}
+
+	switch c := cmd.(type) {
+	case *ExitCommand:
+		ts.exit(c.Code)
+	case *ExecuteScriptCommand:
+		ts.executeScriptCommand(c.Command)
+	case *EditScriptExternalCommand:
+		ts.editScriptExternalCommand(c.ScriptPath)
+	}
+}
+
+func (ts *TerminalService) executeScriptCommand(finalCommand string) {
+	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
+	if cmdFdPath != "" {
+		_ = os.WriteFile(cmdFdPath, []byte(finalCommand), 0600)
+		ts.exit(int(exitCodeSuccess))
+		return
+	}
+
+	fmt.Print(finalCommand)
+	ts.exit(int(exitCodeSuccess))
+}
+
+func (ts *TerminalService) editScriptExternalCommand(scriptPath string) {
+	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
+	if cmdFdPath != "" {
+		_ = os.WriteFile(cmdFdPath, []byte(scriptPath), 0600)
+		ts.exit(int(exitCodeExternalEditor))
+		return
+	}
+
+	fmt.Print(scriptPath)
+	ts.exit(int(exitCodeExternalEditor))
 }
