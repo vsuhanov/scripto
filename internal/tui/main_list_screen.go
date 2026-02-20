@@ -487,6 +487,10 @@ func (m *MainListScreen) renderList(width, height int) string {
 			Height(height).
 			Render(emptyMsg)
 	}
+	// return ListStyle.
+	// 	Width(width).
+	// 	Height(height).
+	// 	Render(lipgloss.NewStyle().Foreground(lipgloss.Color("#ff9900")).Bold(false).Render("mytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nytext \n my text \n"))
 
 	var items []string
 	var currentScope string
@@ -516,9 +520,9 @@ func (m *MainListScreen) renderList(width, height int) string {
 		content = strings.Join(lines, "\n")
 	}
 
-	style := ListStyle.Width(width-totalBorderWidth).MaxWidth(width)
+	style := ListStyle.Width(width - totalBorderWidth).MaxWidth(width)
 	if m.focusedPane == "list" {
-		style = ListFocusedStyle.Width(width-totalBorderWidth).MaxWidth(width)
+		style = ListFocusedStyle.Width(width - totalBorderWidth).MaxWidth(width)
 	}
 
 	rendered := style.Render(content)
@@ -550,7 +554,7 @@ func (m *MainListScreen) renderFooter() string {
 	} else if m.statusMsg != "" {
 		statusText = m.statusMsg
 	} else {
-		statusText = "Ready"
+		statusText = ""
 	}
 
 	status := StatusStyle.Render(statusText)
@@ -612,18 +616,21 @@ func (m *MainListScreen) formatScriptItem(script script.MatchResult, index int, 
 	}
 
 	if utf8.RuneCountInString(displayName) > maxWidth {
-		displayName = m.truncateString(displayName, maxWidth-3 - indent) + "…"
+		displayName = m.truncateString(displayName, (maxWidth-4-indent)) + "…"
 	}
 
-	parts = append(parts, displayName)
-
-	item := strings.Join(parts, " ")
+	item := ListItemStyle.Bold(false).Width(maxWidth-4).Render(displayName)
 
 	if index == m.selectedItemIndex {
-		return ListItemSelectedStyle.Render(item)
+		item = ListItemSelectedStyle.Width(maxWidth - 4).Render(displayName)
 	}
 
-	return ListItemStyle.Render(item)
+	parts = append(parts, item)
+
+	// return lipgloss.NewStyle().Width(maxWidth-4).Background(lipgloss.Color("#ff9900")).Render(strings.Join(parts, " "))
+	return strings.Join(parts, " ")
+	// return lipgloss.NewStyle().Width(maxWidth-4).Background(lipgloss.Color("#ff9900")).Render()
+
 }
 
 func (m *MainListScreen) formatScopeHeader(scope string) string {

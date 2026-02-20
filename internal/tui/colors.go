@@ -91,7 +91,7 @@ var Colors = struct {
 		Dark:  lipgloss.CompleteColor{TrueColor: "#ffffff", ANSI256: "15", ANSI: "7"},
 	},
 	White: lipgloss.CompleteAdaptiveColor{
-		Light: lipgloss.CompleteColor{TrueColor: "#000000", ANSI256: "0", ANSI: "0"},
+		Light: lipgloss.CompleteColor{TrueColor: "#ffffff", ANSI256: "15", ANSI: "7"},
 		Dark:  lipgloss.CompleteColor{TrueColor: "#ffffff", ANSI256: "15", ANSI: "7"},
 	},
 

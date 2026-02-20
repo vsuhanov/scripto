@@ -47,7 +47,7 @@ var (
 				Padding(0, 1)
 
 	ItemStyle = lipgloss.NewStyle().
-			Foreground(textColor).
+			Foreground(selectedBgColor).
 			Padding(0, 1)
 
 	// Preview pane styles
