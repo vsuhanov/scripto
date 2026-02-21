@@ -5,6 +5,9 @@ import (
 	"os"
 )
 
+type osExitFunc func(code int)
+type osWriteFileFunc func(name string, data []byte, perm os.FileMode) error
+
 type exitCode int
 
 const (
@@ -28,59 +31,23 @@ type EditScriptExternalCommand struct {
 	ScriptPath string
 }
 
-type TerminalService struct{}
-
-func NewTerminalService() *TerminalService {
-	return &TerminalService{}
+type TerminalServiceOptions struct {
+	targetCommandFile string
 }
 
-func (ts *TerminalService) ExecuteScript(finalCommand string) error {
-	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
-	if cmdFdPath != "" {
-		err := os.WriteFile(cmdFdPath, []byte(finalCommand), 0600)
-		if err != nil {
-			return fmt.Errorf("failed to write command to descriptor: %w", err)
-		}
-		ts.exit(int(exitCodeSuccess))
-		return nil
+type TerminalService struct {
+	options TerminalServiceOptions
+	exitFunc osExitFunc
+	writeFileFunc osWriteFileFunc	
+
+}
+
+func NewTerminalService(options TerminalServiceOptions) *TerminalService {
+	return &TerminalService{
+		options: options,
+		exitFunc: os.Exit
+		writeFileFunc: os.WriteFile,
 	}
-
-	fmt.Print(finalCommand)
-	ts.exit(int(exitCodeSuccess))
-	return nil
-}
-
-func (ts *TerminalService) EditScriptExternal(scriptPath string) error {
-	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
-	if cmdFdPath != "" {
-		err := os.WriteFile(cmdFdPath, []byte(scriptPath), 0600)
-		if err != nil {
-			return fmt.Errorf("failed to write script path to descriptor: %w", err)
-		}
-		ts.exit(int(exitCodeExternalEditor))
-		return nil
-	}
-
-	fmt.Print(scriptPath)
-	ts.exit(int(exitCodeExternalEditor))
-	return nil
-}
-
-func (ts *TerminalService) ExitWithError(message string) {
-	fmt.Fprintf(os.Stderr, "Error: %v\n", message)
-	ts.exit(int(exitCodeError))
-}
-
-func (ts *TerminalService) ExitBuiltinComplete() {
-	ts.exit(int(exitCodeBuiltinComplete))
-}
-
-func (ts *TerminalService) ExitWithCode(code int) {
-	ts.exit(code)
-}
-
-func (ts *TerminalService) exit(code int) {
-	os.Exit(code)
 }
 
 func (ts *TerminalService) PrepareExit(code int) TerminalServiceCommand {
@@ -110,26 +77,23 @@ func (ts *TerminalService) ExecuteCommand(cmd TerminalServiceCommand) {
 	}
 }
 
-func (ts *TerminalService) executeScriptCommand(finalCommand string) {
-	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
+func (ts *TerminalService) executeScriptCommand(command string) {
+	cmdFdPath := ts.options.targetCommandFile
 	if cmdFdPath != "" {
-		_ = os.WriteFile(cmdFdPath, []byte(finalCommand), 0600)
-		ts.exit(int(exitCodeSuccess))
-		return
+		_ = ts.writeFileFunc(cmdFdPath, []byte(command), 0600)
+	} else {
+		fmt.Print(command)
 	}
-
-	fmt.Print(finalCommand)
-	ts.exit(int(exitCodeSuccess))
+	ts.exitFunc(int(exitCodeSuccess))
 }
 
 func (ts *TerminalService) editScriptExternalCommand(scriptPath string) {
-	cmdFdPath := os.Getenv("SCRIPTO_CMD_FD")
+	cmdFdPath := ts.options.targetCommandFile
 	if cmdFdPath != "" {
-		_ = os.WriteFile(cmdFdPath, []byte(scriptPath), 0600)
-		ts.exit(int(exitCodeExternalEditor))
-		return
+		_ = ts.writeFileFunc(cmdFdPath, []byte(scriptPath), 0600)
+	} else {
+		fmt.Print(scriptPath)
 	}
-
-	fmt.Print(scriptPath)
-	ts.exit(int(exitCodeExternalEditor))
+	ts.exitFunc(int(exitCodeExternalEditor))
 }
+

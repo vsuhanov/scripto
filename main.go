@@ -43,32 +43,36 @@ func main() {
 func handleCommand(container *services.Container, args []string) {
 	if len(args) > 0 && args[0] == "__complete" {
 		handleCompletion(container, args[1:])
-		container.TerminalService.ExitBuiltinComplete()
+		container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(3))
 	}
 
 	if len(args) > 0 && args[0] == "install" {
 		if err := handleInstall(container); err != nil {
-			container.TerminalService.ExitWithError(err.Error())
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
+			container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
 		}
 		return
 	}
 
 	if len(args) == 0 {
 		if err := tui.RunApp(container, tui.StartAtMainList); err != nil {
-			container.TerminalService.ExitWithError(err.Error())
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
+			container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
 		}
 		return
 	}
 
 	if args[0] == "add" {
 		if err := tui.RunApp(container, tui.StartAtAdd); err != nil {
-			container.TerminalService.ExitWithError(err.Error())
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
+			container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
 		}
 		return
 	}
 
 	if err := executeScript(container, args); err != nil {
-		container.TerminalService.ExitWithError(err.Error())
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
+		container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
 		return
 	}
 }
@@ -139,7 +143,8 @@ func executeFoundScript(container *services.Container, matchResult *script.Match
 		if err != nil {
 			return err
 		}
-		return container.TerminalService.ExecuteScript(finalCommand)
+		container.TerminalService.ExecuteCommand(container.TerminalService.PrepareScriptExecution(finalCommand))
+		return nil
 	}
 
 	formResult, err := tui.RunPlaceholderForm(processingResult.Placeholders)
@@ -155,7 +160,8 @@ func executeFoundScript(container *services.Container, matchResult *script.Match
 	if err != nil {
 		return err
 	}
-	return container.TerminalService.ExecuteScript(finalCommand)
+	container.TerminalService.ExecuteCommand(container.TerminalService.PrepareScriptExecution(finalCommand))
+	return nil
 }
 
 func handleNoMatch(container *services.Container, input string) error {

@@ -1,6 +1,6 @@
 package services
+import "os"
 
-// Container holds all application services
 type Container struct {
 	ScriptService    *ScriptService
 	ExecutionService *ExecutionService
@@ -8,7 +8,6 @@ type Container struct {
 	HistoryService   *HistoryService
 }
 
-// New creates and initializes all services
 func NewContainer() (*Container, error) {
 	scriptService, err := NewScriptService()
 	if err != nil {
@@ -18,7 +17,9 @@ func NewContainer() (*Container, error) {
 	return &Container{
 		ScriptService:    scriptService,
 		ExecutionService: NewExecutionService(),
-		TerminalService:  NewTerminalService(),
+		TerminalService:  NewTerminalService(TerminalServiceOptions{
+			targetCommandFile: os.Getenv("SCRIPTO_CMD_FD"),
+		}),
 		HistoryService:  NewHistoryService(),
 	}, nil
 }
