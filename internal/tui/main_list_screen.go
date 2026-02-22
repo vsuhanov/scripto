@@ -576,32 +576,6 @@ func (m *MainListScreen) renderFooter() string {
 	)
 }
 
-func (m *MainListScreen) renderHelp() string {
-	helpText := `Scripto - Script Manager
-
-Navigation:
-  j, ↓         Move down in list
-  k, ↑         Move up in list  
-  g            Go to first script
-  G            Go to last script
-  tab          Switch between list and preview
-  
-Actions:
-  ↵ (enter)    Execute selected script
-  e            Edit script inline
-  E            Edit script in external editor
-  d            Delete script (with confirmation)
-  D            Delete script immediately
-  
-Other:
-  ?            Toggle this help
-  q, Ctrl+C    Quit
-
-Press ? or Esc to close this help.`
-
-	return HelpScreenStyle.Width(m.width).Height(m.height).Render(helpText)
-}
-
 func (m *MainListScreen) formatScriptItem(script script.MatchResult, index int, maxWidth int, indent int) string {
 	var parts []string
 
@@ -619,7 +593,7 @@ func (m *MainListScreen) formatScriptItem(script script.MatchResult, index int, 
 		displayName = m.truncateString(displayName, (maxWidth-4-indent)) + "…"
 	}
 
-	item := ListItemStyle.Bold(false).Width(maxWidth-4).Render(displayName)
+	item := ListItemStyle.Bold(false).Width(maxWidth - 4).Render(displayName)
 
 	if index == m.selectedItemIndex {
 		item = ListItemSelectedStyle.Width(maxWidth - 4).Render(displayName)
@@ -730,4 +704,30 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (m *MainListScreen) renderHelp() string {
+	helpText := `Scripto - Script Manager
+
+Navigation:
+  j, ↓         Move down in list
+  k, ↑         Move up in list  
+  g            Go to first script
+  G            Go to last script
+  tab          Switch between list and preview
+  
+Actions:
+  ↵ (enter)    Execute selected script
+  e            Edit script inline
+  E            Edit script in external editor
+  d            Delete script (with confirmation)
+  D            Delete script immediately
+  
+Other:
+  ?            Toggle this help
+  q, Ctrl+C    Quit
+
+Press ? or Esc to close this help.`
+
+	return HelpScreenStyle.Width(m.width).Height(m.height).Render(helpText)
 }

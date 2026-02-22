@@ -45,7 +45,7 @@ type TerminalService struct {
 func NewTerminalService(options TerminalServiceOptions) *TerminalService {
 	return &TerminalService{
 		options: options,
-		exitFunc: os.Exit
+		exitFunc: os.Exit,
 		writeFileFunc: os.WriteFile,
 	}
 }
@@ -69,7 +69,7 @@ func (ts *TerminalService) ExecuteCommand(cmd TerminalServiceCommand) {
 
 	switch c := cmd.(type) {
 	case *ExitCommand:
-		ts.exit(c.Code)
+		ts.exitFunc(c.Code)
 	case *ExecuteScriptCommand:
 		ts.executeScriptCommand(c.Command)
 	case *EditScriptExternalCommand:
