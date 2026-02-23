@@ -436,13 +436,13 @@ func (m *MainListScreen) wrapText(text string, width int) string {
 func (m *MainListScreen) renderMainView() string {
 
 	listWidth := min(50, m.width/2)
-	previewWidth := m.width - listWidth - 4
+	previewWidth := m.width - listWidth
 
 	header := m.renderHeader()
 	footer := m.renderFooter()
 	availableHeight := m.height - lipgloss.Height(header) - lipgloss.Height(footer)
-	listView := m.renderList(listWidth, availableHeight)
 	log.Printf("RenderMainView - Width: %d, Height: %d, AvailableHeight: %d, ListWidth: %d, PreviewWidth: %d", m.width, m.height, availableHeight, listWidth, previewWidth)
+	listView := m.renderList(listWidth, availableHeight)
 	// previewView := m.renderPreview(previewWidth, availableHeight)
 
 	mainContent := lipgloss.JoinHorizontal(
@@ -477,14 +477,21 @@ func (m *MainListScreen) renderHeader() string {
 	// )
 }
 
-func (m *MainListScreen) renderList(width, height int) string {
-	totalBorderHeight := 2
-	totalBorderWidth := 2
+type scopedSubList struct {
+	scopeTitle          string
+	formattedScopeTitle string
+	items               []string
+}
+
+func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
+	totalVerticalBorder := 2
+	totalHorizontalBorder := 2
+	maxListItemWidth := maxWidth - totalHorizontalBorder
 	if len(m.scripts) == 0 {
 		emptyMsg := "No scripts found.\nUse 'scripto add' to create some scripts."
 		return ListStyle.
-			Width(width).
-			Height(height).
+			Width(maxWidth).
+			Height(maxHeight).
 			Render(emptyMsg)
 	}
 	// return ListStyle.
@@ -505,35 +512,44 @@ func (m *MainListScreen) renderList(width, height int) string {
 			currentScope = script.Script.Scope
 		}
 
-		item := m.formatScriptItem(script, i, width-totalBorderWidth, 3)
+		item := m.formatScriptItem(script, i, maxListItemWidth, 3)
 		items = append(items, item)
 	}
 
 	content := strings.Join(items, "\n")
 
-	contentHeight := max(1, height-totalBorderHeight)
-	lines := strings.Split(content, "\n")
+	maxPossibleContentHeight := max(1, maxHeight-totalVerticalBorder)
 
-	if len(lines) > contentHeight {
-		start, end := m.calculateScrollWindow(lines, height-totalBorderHeight)
-		lines = lines[start:end]
-		content = strings.Join(lines, "\n")
+	var start, end int;
+	if len(items) > maxPossibleContentHeight {
+		selectedLine := m.findSelectedLine(items)
+		start, end = calculateScrollWindow(selectedLine, len(items), maxHeight-totalVerticalBorder)
+		items = items[start:end]
+		content = strings.Join(items, "\n")
 	}
 
-	style := ListStyle.Width(width - totalBorderWidth).MaxWidth(width)
+	log.Printf("renderList - maxWidth: %v, maxHeight: %v, len(m.scripts): %v, maxHeight-totalVerticalBorder: %v, maxPossibleContentHeight: %v, start: %v, end: %v", maxWidth, maxHeight, len(m.scripts), maxHeight-totalVerticalBorder, maxPossibleContentHeight, start, end)
+
+	style := ListStyle
 	if m.focusedPane == "list" {
-		style = ListFocusedStyle.Width(width - totalBorderWidth).MaxWidth(width)
+		style = ListFocusedStyle
 	}
+
+	style = style.
+		Width(maxListItemWidth).
+		MaxWidth(maxWidth).
+		Height(maxHeight - totalVerticalBorder).
+		MaxHeight(maxHeight)
 
 	rendered := style.Render(content)
-	renderedHeight := lipgloss.Height(rendered)
+	// renderedHeight := lipgloss.Height(rendered)
 
-	for renderedHeight > contentHeight && len(lines) > 1 {
-		lines = lines[:len(lines)-1]
-		content = strings.Join(lines, "\n")
-		rendered = style.Render(content)
-		renderedHeight = lipgloss.Height(rendered)
-	}
+	// for renderedHeight > contentHeight && len(lines) > 1 {
+	// 	lines = lines[:len(lines)-1]
+	// 	content = strings.Join(lines, "\n")
+	// 	rendered = style.Render(content)
+	// 	renderedHeight = lipgloss.Height(rendered)
+	// }
 
 	return rendered
 }
@@ -639,20 +655,18 @@ func (m *MainListScreen) formatDirectoryName(dir string) string {
 	return fullPath
 }
 
-func (m *MainListScreen) calculateScrollWindow(lines []string, visibleHeight int) (int, int) {
-	selectedLine := m.findSelectedLine(lines)
-
+func calculateScrollWindow(selectedLine, totalLines, visibleHeight int) (int, int) {
 	halfWindow := visibleHeight / 2
 	start := selectedLine - halfWindow
-	end := selectedLine + halfWindow + 1
+	end := selectedLine + halfWindow
 
 	if start < 0 {
 		start = 0
 	}
-	if end > len(lines) {
-		end = len(lines)
+	if end > totalLines {
+		end = totalLines
 	}
-	if end-start < visibleHeight && len(lines) > visibleHeight {
+	if end-start < visibleHeight && totalLines > visibleHeight {
 		if start > 0 {
 			start = end - visibleHeight
 		} else {
@@ -666,6 +680,7 @@ func (m *MainListScreen) calculateScrollWindow(lines []string, visibleHeight int
 	return start, end
 }
 
+// TODO: this feels extremely unreliable, better to keep some structures with scopes
 func (m *MainListScreen) findSelectedLine(lines []string) int {
 	scopeHeaders := 0
 	for i := 0; i <= m.selectedItemIndex && i < len(m.scripts); i++ {

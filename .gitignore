@@ -3,3 +3,4 @@ CLAUDE.local.md
 .claude/settings.local.json
 bin/
 *.iml
+__debug_*
