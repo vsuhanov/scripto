@@ -10,15 +10,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"scripto/internal/script"
+	"scripto/entities"
 	"scripto/internal/services"
 	"scripto/internal/storage"
-
-	"unicode/utf8"
 )
 
 type MainListScreen struct {
-	scripts           []script.MatchResult
+	scripts           []entities.Script
 	selectedItemIndex int
 	config            storage.Config
 	configPath        string
@@ -68,9 +66,26 @@ func (m *MainListScreen) RefreshScripts() {
 
 func (m *MainListScreen) Init() tea.Cmd {
 	return tea.Batch(
-		loadScripts(m.container.ScriptService),
+		m.loadScripts(),
 		tea.EnterAltScreen,
 	)
+}
+
+func (m *MainListScreen) loadScripts() tea.Cmd {
+	return func() tea.Msg {
+		scripts, err := m.container.ScriptService.FindAllScripts()
+		if err != nil {
+			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))
+		}
+
+		result := make([]entities.Script, len(scripts))
+
+		for i, v := range scripts {
+			result[i] = v.Script
+		}
+
+		return ScriptsLoadedMsg(result)
+	}
 }
 
 func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -95,7 +110,7 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ScriptsLoadedMsg:
-		m.scripts = []script.MatchResult(msg)
+		m.scripts = []entities.Script(msg)
 		m.ready = true
 		if len(m.scripts) > 0 && m.selectedItemIndex >= len(m.scripts) {
 			m.selectedItemIndex = 0
@@ -170,7 +185,7 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.scripts) > 0 {
 			selected := m.scripts[m.selectedItemIndex]
 			return m, func() tea.Msg {
-				return ExecuteScriptMsg{scriptPath: selected.Script.FilePath}
+				return ExecuteScriptMsg{scriptPath: selected.FilePath}
 			}
 		}
 
@@ -227,7 +242,7 @@ func (m *MainListScreen) handleInlineEdit() (tea.Model, tea.Cmd) {
 
 	selected := m.scripts[m.selectedItemIndex]
 	return m, func() tea.Msg {
-		return ShowScriptEditorMsg{script: selected.Script}
+		return ShowScriptEditorMsg{script: selected}
 	}
 }
 
@@ -237,7 +252,7 @@ func (m *MainListScreen) handleExternalEdit() (tea.Model, tea.Cmd) {
 	}
 
 	selected := m.scripts[m.selectedItemIndex]
-	scriptPath := selected.Script.FilePath
+	scriptPath := selected.FilePath
 
 	if scriptPath == "" {
 		m.statusMsg = "Cannot edit: script has no file path"
@@ -261,7 +276,7 @@ func (m *MainListScreen) handleImmediateDelete() (tea.Model, tea.Cmd) {
 	if len(m.scripts) > 0 {
 		selected := m.scripts[m.selectedItemIndex]
 		return m, func() tea.Msg {
-			return DeleteScriptMsg{script: selected.Script}
+			return DeleteScriptMsg{script: selected}
 		}
 	}
 	return m, nil
@@ -274,7 +289,7 @@ func (m *MainListScreen) handleDeleteConfirmation(msg tea.KeyMsg) (tea.Model, te
 		if len(m.scripts) > 0 {
 			selected := m.scripts[m.selectedItemIndex]
 			return m, func() tea.Msg {
-				return DeleteScriptMsg{script: selected.Script}
+				return DeleteScriptMsg{script: selected}
 			}
 		}
 		return m, nil
@@ -288,6 +303,7 @@ func (m *MainListScreen) handleDeleteConfirmation(msg tea.KeyMsg) (tea.Model, te
 }
 
 func (m *MainListScreen) updatePreview() tea.Cmd {
+	// #FIXME: content for the preview need to be set somehow differntly
 	if len(m.scripts) == 0 || m.selectedItemIndex >= len(m.scripts) {
 		m.viewport.SetContent("")
 		return nil
@@ -299,7 +315,80 @@ func (m *MainListScreen) updatePreview() tea.Cmd {
 	return nil
 }
 
-func (m *MainListScreen) formatPreviewContent(script script.MatchResult) string {
+func (m *MainListScreen) getScopeDisplayName(scope string) string {
+	if m.container != nil {
+		return m.container.ScriptService.GetScopeDisplayName(scope)
+	}
+	return scope
+}
+
+func (m *MainListScreen) renderMainView() string {
+	listWidth := min(50, m.width/2)
+	previewWidth := m.width - listWidth
+
+	header := m.renderHeader()
+	footer := m.renderFooter()
+	availableHeight := m.height - lipgloss.Height(header) - lipgloss.Height(footer)
+	log.Printf("RenderMainView - Width: %d, Height: %d, AvailableHeight: %d, ListWidth: %d, PreviewWidth: %d", m.width, m.height, availableHeight, listWidth, previewWidth)
+	listView := m.renderList(listWidth, availableHeight)
+	previewView := m.renderPreview(previewWidth, availableHeight)
+
+	mainContent := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		listView,
+		// " ",
+		previewView,
+	)
+
+	// return mainContent
+	return lipgloss.JoinVertical(
+		lipgloss.Left,
+		header,
+		mainContent,
+		footer,
+	)
+}
+
+func (m *MainListScreen) renderHeader() string {
+	title := TitleStyle.Render("Scripto - Script Manager")
+	help := HelpStyle.Render("? for help • q to quit")
+	log.Printf("Header - Width: %d, TitleWidth: %d, HelpWidth: %d, Spacing: %d", m.width, lipgloss.Width(title), lipgloss.Width(help), max(0, m.width-lipgloss.Width(title)-lipgloss.Width(help)))
+
+	return title
+	// return HeaderStyle.Width(m.width).Height(3).Render(
+	// 	lipgloss.JoinHorizontal(
+	// 		lipgloss.Center,
+	// 		title,
+	// 		strings.Repeat(" ", max(0, m.width-lipgloss.Width(title)-lipgloss.Width(help))),
+	// 		help,
+	// 	),
+	// )
+}
+
+func (m *MainListScreen) renderPreview(maxWidth, maxHeight int) string {
+	totalVerticalBorder := 2
+	totalHorizontalBorder := 2
+
+	previewStyle := PreviewStyle
+	if m.focusedPane == "preview" {
+		previewStyle = PreviewFocusedStyle
+	}
+
+	log.Printf("renderPreview - maxWidth: %v, maxHeight: %v", maxWidth, maxHeight)
+
+	previewStyle = previewStyle.
+		Width(maxWidth - totalHorizontalBorder).
+		MaxWidth(maxWidth).
+		Height(maxHeight - totalVerticalBorder).
+		MaxHeight(maxHeight)
+
+	rendered := previewStyle.Render("Preview")
+	log.Printf("renderPreview - rendered - rendered.Width: %v, rendered.Height: %v", lipgloss.Width(rendered), lipgloss.Height(rendered))
+
+	return rendered
+}
+
+func (m *MainListScreen) formatPreviewContent(script entities.Script) string {
 	var sections []string
 
 	title := m.formatPreviewTitle(script)
@@ -308,25 +397,25 @@ func (m *MainListScreen) formatPreviewContent(script script.MatchResult) string 
 	metadata := m.formatPreviewMetadata(script)
 	sections = append(sections, metadata)
 
-	if script.Script.Description != "" {
-		description := m.formatPreviewDescription(script.Script.Description, m.maxWidth)
+	if script.Description != "" {
+		description := m.formatPreviewDescription(script.Description, m.maxWidth)
 		sections = append(sections, description)
 	}
 
-	if script.Script.FilePath != "" {
-		fileContent := m.formatPreviewFileContent(script.Script.FilePath, m.maxWidth)
+	if script.FilePath != "" {
+		fileContent := m.formatPreviewFileContent(script.FilePath, m.maxWidth)
 		sections = append(sections, fileContent)
 	}
 
 	return strings.Join(sections, "\n\n")
 }
 
-func (m *MainListScreen) formatPreviewTitle(selected script.MatchResult) string {
-	scopeIndicator := FormatScopeIndicator(selected.Script.Scope)
+func (m *MainListScreen) formatPreviewTitle(selected entities.Script) string {
+	scopeIndicator := FormatScopeIndicator(selected.Scope)
 
 	var title string
-	if selected.Script.Name != "" {
-		title = selected.Script.Name
+	if selected.Name != "" {
+		title = selected.Name
 	} else {
 		title = "Unnamed Script"
 	}
@@ -334,24 +423,24 @@ func (m *MainListScreen) formatPreviewTitle(selected script.MatchResult) string 
 	return PreviewTitleStyle.Render(fmt.Sprintf("%s %s", scopeIndicator, title))
 }
 
-func (m *MainListScreen) formatPreviewMetadata(selected script.MatchResult) string {
+func (m *MainListScreen) formatPreviewMetadata(selected entities.Script) string {
 	var metadata []string
 
-	if selected.Script.Scope == "global" {
+	if selected.Scope == "global" {
 		metadata = append(metadata, "Scope: global")
 	} else {
-		scopeLabel := m.getScopeDisplayName(selected.Script.Scope)
+		scopeLabel := m.getScopeDisplayName(selected.Scope)
 		metadata = append(metadata, fmt.Sprintf("Scope: %s", scopeLabel))
 
-		dir := selected.Script.Scope
+		dir := selected.Scope
 		if len(dir) > 50 {
 			dir = "..." + dir[len(dir)-47:]
 		}
 		metadata = append(metadata, fmt.Sprintf("Directory: %s", dir))
 	}
 
-	if selected.Script.FilePath != "" {
-		filename := filepath.Base(selected.Script.FilePath)
+	if selected.FilePath != "" {
+		filename := filepath.Base(selected.FilePath)
 		metadata = append(metadata, fmt.Sprintf("File: %s", filename))
 	}
 
@@ -394,175 +483,6 @@ func (m *MainListScreen) formatPreviewFileContent(filePath string, maxWidth int)
 
 	return title + "\n" + styledContent
 }
-
-func (m *MainListScreen) getScopeDisplayName(scope string) string {
-	if m.container != nil {
-		return m.container.ScriptService.GetScopeDisplayName(scope)
-	}
-	return scope
-}
-
-func (m *MainListScreen) wrapText(text string, width int) string {
-	if width <= 0 {
-		return text
-	}
-
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return text
-	}
-
-	var lines []string
-	var currentLine string
-
-	for _, word := range words {
-		if len(currentLine)+len(word)+1 > width && currentLine != "" {
-			lines = append(lines, currentLine)
-			currentLine = word
-		} else if currentLine == "" {
-			currentLine = word
-		} else {
-			currentLine += " " + word
-		}
-	}
-
-	if currentLine != "" {
-		lines = append(lines, currentLine)
-	}
-
-	return strings.Join(lines, "\n")
-}
-
-func (m *MainListScreen) renderMainView() string {
-
-	listWidth := min(50, m.width/2)
-	previewWidth := m.width - listWidth
-
-	header := m.renderHeader()
-	footer := m.renderFooter()
-	availableHeight := m.height - lipgloss.Height(header) - lipgloss.Height(footer)
-	log.Printf("RenderMainView - Width: %d, Height: %d, AvailableHeight: %d, ListWidth: %d, PreviewWidth: %d", m.width, m.height, availableHeight, listWidth, previewWidth)
-	listView := m.renderList(listWidth, availableHeight)
-	// previewView := m.renderPreview(previewWidth, availableHeight)
-
-	mainContent := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		listView,
-		// " ",
-		// previewView,
-	)
-
-	// return mainContent
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		header,
-		mainContent,
-		footer,
-	)
-}
-
-func (m *MainListScreen) renderHeader() string {
-	title := TitleStyle.Render("Scripto - Script Manager")
-	help := HelpStyle.Render("? for help • q to quit")
-	log.Printf("Header - Width: %d, TitleWidth: %d, HelpWidth: %d, Spacing: %d", m.width, lipgloss.Width(title), lipgloss.Width(help), max(0, m.width-lipgloss.Width(title)-lipgloss.Width(help)))
-
-	return title
-	// return HeaderStyle.Width(m.width).Height(3).Render(
-	// 	lipgloss.JoinHorizontal(
-	// 		lipgloss.Center,
-	// 		title,
-	// 		strings.Repeat(" ", max(0, m.width-lipgloss.Width(title)-lipgloss.Width(help))),
-	// 		help,
-	// 	),
-	// )
-}
-
-type scopedSubList struct {
-	scopeTitle          string
-	formattedScopeTitle string
-	items               []string
-}
-
-func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
-	totalVerticalBorder := 2
-	totalHorizontalBorder := 2
-	maxListItemWidth := maxWidth - totalHorizontalBorder
-	if len(m.scripts) == 0 {
-		emptyMsg := "No scripts found.\nUse 'scripto add' to create some scripts."
-		return ListStyle.
-			Width(maxWidth).
-			Height(maxHeight).
-			Render(emptyMsg)
-	}
-	// return ListStyle.
-	// 	Width(width).
-	// 	Height(height).
-	// 	Render(lipgloss.NewStyle().Foreground(lipgloss.Color("#ff9900")).Bold(false).Render("mytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nytext \n my text \n"))
-
-	var items []string
-	var currentScope string
-
-	for i, script := range m.scripts {
-		if script.Script.Scope != currentScope {
-			if currentScope != "" {
-			}
-
-			scopeHeader := m.formatScopeHeader(script.Script.Scope)
-			items = append(items, scopeHeader)
-			currentScope = script.Script.Scope
-		}
-
-		item := m.formatScriptItem(script, i, maxListItemWidth, 3)
-		items = append(items, item)
-	}
-
-	content := strings.Join(items, "\n")
-
-	maxPossibleContentHeight := max(1, maxHeight-totalVerticalBorder)
-
-	var start, end int;
-	if len(items) > maxPossibleContentHeight {
-		selectedLine := m.findSelectedLine(items)
-		start, end = calculateScrollWindow(selectedLine, len(items), maxHeight-totalVerticalBorder)
-		items = items[start:end]
-		content = strings.Join(items, "\n")
-	}
-
-	log.Printf("renderList - maxWidth: %v, maxHeight: %v, len(m.scripts): %v, maxHeight-totalVerticalBorder: %v, maxPossibleContentHeight: %v, start: %v, end: %v", maxWidth, maxHeight, len(m.scripts), maxHeight-totalVerticalBorder, maxPossibleContentHeight, start, end)
-
-	style := ListStyle
-	if m.focusedPane == "list" {
-		style = ListFocusedStyle
-	}
-
-	style = style.
-		Width(maxListItemWidth).
-		MaxWidth(maxWidth).
-		Height(maxHeight - totalVerticalBorder).
-		MaxHeight(maxHeight)
-
-	rendered := style.Render(content)
-	// renderedHeight := lipgloss.Height(rendered)
-
-	// for renderedHeight > contentHeight && len(lines) > 1 {
-	// 	lines = lines[:len(lines)-1]
-	// 	content = strings.Join(lines, "\n")
-	// 	rendered = style.Render(content)
-	// 	renderedHeight = lipgloss.Height(rendered)
-	// }
-
-	return rendered
-}
-
-func (m *MainListScreen) renderPreview(width, height int) string {
-	previewStyle := PreviewStyle.Width(width).Height(height)
-	if m.focusedPane == "preview" {
-		previewStyle = PreviewFocusedStyle.Width(width).Height(height)
-	}
-
-	return previewStyle.Render(m.viewport.View())
-}
-
 func (m *MainListScreen) renderFooter() string {
 	var statusText string
 	if m.confirmDelete {
@@ -592,111 +512,6 @@ func (m *MainListScreen) renderFooter() string {
 	)
 }
 
-func (m *MainListScreen) formatScriptItem(script script.MatchResult, index int, maxWidth int, indent int) string {
-	var parts []string
-
-	scopeIndicator := FormatScopeIndicator(script.Script.Scope)
-	parts = append(parts, scopeIndicator)
-
-	var displayName string
-	if script.Script.Name != "" {
-		displayName = script.Script.Name
-	} else {
-		displayName = m.truncateString(script.Script.FilePath, 60)
-	}
-
-	if utf8.RuneCountInString(displayName) > maxWidth {
-		displayName = m.truncateString(displayName, (maxWidth-4-indent)) + "…"
-	}
-
-	item := ListItemStyle.Bold(false).Width(maxWidth - 4).Render(displayName)
-
-	if index == m.selectedItemIndex {
-		item = ListItemSelectedStyle.Width(maxWidth - 4).Render(displayName)
-	}
-
-	parts = append(parts, item)
-
-	// return lipgloss.NewStyle().Width(maxWidth-4).Background(lipgloss.Color("#ff9900")).Render(strings.Join(parts, " "))
-	return strings.Join(parts, " ")
-	// return lipgloss.NewStyle().Width(maxWidth-4).Background(lipgloss.Color("#ff9900")).Render()
-
-}
-
-func (m *MainListScreen) formatScopeHeader(scope string) string {
-	var header string
-	scopeType := getScopeType(scope)
-	style := GetScopeStyle(scopeType)
-
-	switch scopeType {
-	case "local":
-		header = "● " + m.formatDirectoryName(scope)
-	case "parent":
-		header = "◐ " + m.formatDirectoryName(scope)
-	case "global":
-		header = "○ Global Scripts"
-	default:
-		header = m.formatDirectoryName(scope)
-	}
-
-	return style.Bold(true).Render(header)
-}
-
-func (m *MainListScreen) formatDirectoryName(dir string) string {
-	if dir == "global" {
-		return "Global Scripts"
-	}
-
-	fullPath := dir
-
-	if len(fullPath) > 100 {
-	}
-
-	return fullPath
-}
-
-func calculateScrollWindow(selectedLine, totalLines, visibleHeight int) (int, int) {
-	halfWindow := visibleHeight / 2
-	start := selectedLine - halfWindow
-	end := selectedLine + halfWindow
-
-	if start < 0 {
-		start = 0
-	}
-	if end > totalLines {
-		end = totalLines
-	}
-	if end-start < visibleHeight && totalLines > visibleHeight {
-		if start > 0 {
-			start = end - visibleHeight
-		} else {
-			end = start + visibleHeight
-		}
-	}
-	if start < 0 {
-		start = 0
-	}
-
-	return start, end
-}
-
-// TODO: this feels extremely unreliable, better to keep some structures with scopes
-func (m *MainListScreen) findSelectedLine(lines []string) int {
-	scopeHeaders := 0
-	for i := 0; i <= m.selectedItemIndex && i < len(m.scripts); i++ {
-		if i == 0 || m.scripts[i].Script.Scope != m.scripts[i-1].Script.Scope {
-			scopeHeaders++
-		}
-	}
-
-	estimatedLine := m.selectedItemIndex + scopeHeaders
-	if estimatedLine >= len(lines) {
-		estimatedLine = len(lines) - 1
-	}
-
-	return estimatedLine
-}
-
 func (m *MainListScreen) truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -705,20 +520,6 @@ func (m *MainListScreen) truncateString(s string, maxLen int) string {
 		return s[:maxLen]
 	}
 	return s[:maxLen-3] + "..."
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func (m *MainListScreen) renderHelp() string {
@@ -745,4 +546,51 @@ Other:
 Press ? or Esc to close this help.`
 
 	return HelpScreenStyle.Width(m.width).Height(m.height).Render(helpText)
+}
+
+// #TODO: move this to some sort of math utils
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// TODO: this is also just a utility function
+func (m *MainListScreen) wrapText(text string, width int) string {
+	if width <= 0 {
+		return text
+	}
+
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return text
+	}
+
+	var lines []string
+	var currentLine string
+
+	for _, word := range words {
+		if len(currentLine)+len(word)+1 > width && currentLine != "" {
+			lines = append(lines, currentLine)
+			currentLine = word
+		} else if currentLine == "" {
+			currentLine = word
+		} else {
+			currentLine += " " + word
+		}
+	}
+
+	if currentLine != "" {
+		lines = append(lines, currentLine)
+	}
+
+	return strings.Join(lines, "\n")
 }

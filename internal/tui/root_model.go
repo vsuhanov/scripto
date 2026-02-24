@@ -10,12 +10,12 @@ import (
 )
 
 type RootModel struct {
-	container        *services.Container
-	currentScreen    tea.Model
-	screenStack      []tea.Model
-	width            int
-	height           int
-	pendingCommand   services.TerminalServiceCommand
+	container      *services.Container
+	currentScreen  tea.Model
+	screenStack    []tea.Model
+	width          int
+	height         int
+	pendingCommand services.TerminalServiceCommand
 }
 
 type StartMode int
@@ -24,6 +24,10 @@ const (
 	StartAtMainList StartMode = iota
 	StartAtAdd
 )
+
+type ExecuteAppCommandMsg struct {
+	command services.TerminalServiceCommand
+}
 
 func NewRootModel(container *services.Container, startMode StartMode) (*RootModel, error) {
 	var initialScreen tea.Model
@@ -68,7 +72,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ExitAppMsg:
-		m.pendingCommand = m.container.TerminalService.PrepareExit(msg.exitCode)
+		return m, func() tea.Msg {
+			return ExecuteAppCommandMsg{
+				command: m.container.TerminalService.PrepareExit(msg.exitCode),
+			}
+		}
+
+	case ExecuteAppCommandMsg:
+		m.pendingCommand = msg.command
 		return m, tea.Quit
 
 	case ExecuteScriptMsg:
@@ -171,8 +182,9 @@ func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
 			}
 		}
 
-		m.pendingCommand = m.container.TerminalService.PrepareScriptExecution(finalCommand)
-		return ExitAppMsg{exitCode: ExitSuccess, message: scriptPath}
+		return ExecuteAppCommandMsg{
+			command: m.container.TerminalService.PrepareScriptExecution(finalCommand),
+		}
 	}
 }
 
@@ -182,8 +194,9 @@ func (m *RootModel) handleEditScriptExternal(scriptPath string) tea.Cmd {
 			return ErrorMsg(fmt.Errorf("no script path provided for external edit"))
 		}
 
-		m.pendingCommand = m.container.TerminalService.PrepareExternalEditing(scriptPath)
-		return ExitAppMsg{exitCode: ExitExternalEditor, message: scriptPath}
+		return ExecuteAppCommandMsg{
+			command: m.container.TerminalService.PrepareExternalEditing(scriptPath),
+		}
 	}
 }
 

@@ -289,7 +289,7 @@ func (s *ScriptService) Reload() error {
 	return nil
 }
 
-// FindAllScripts discovers all available scripts in order: local -> parent -> global
+// FIXME: this needs to be change to work with entities.Script, need to simplify the MatchResult, I don't think I need it.
 func (s *ScriptService) FindAllScripts() ([]script.MatchResult, error) {
 	var results []script.MatchResult
 

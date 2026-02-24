@@ -1,16 +1,12 @@
 package tui
 
 import (
-	"fmt"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"scripto/entities"
-	"scripto/internal/script"
-	"scripto/internal/services"
 )
 
-// Exit codes for the TUI application
 const (
 	ExitSuccess         = 0
 	ExitError           = 1
@@ -18,14 +14,12 @@ const (
 	ExitExternalEditor  = 4
 )
 
-// Messages for the TUI components
 type (
-	ScriptsLoadedMsg []script.MatchResult
+	ScriptsLoadedMsg []entities.Script
 	ErrorMsg         error
 	StatusMsg        string
 )
 
-// Navigation messages
 type NavigateToScreenMsg struct {
 	screen tea.Model
 }
@@ -37,7 +31,6 @@ type ExitAppMsg struct {
 	message  string
 }
 
-// Business action messages
 type ExecuteScriptMsg struct {
 	scriptPath string
 }
@@ -64,26 +57,12 @@ type ShowScriptEditorMsg struct {
 
 type ShowHistoryScreenMsg struct{}
 
-// ScriptEditorResult represents the result of the script editor
 type ScriptEditorResult struct {
 	Script    entities.Script
 	Command   string
 	Cancelled bool
 }
 
-// loadScripts loads all available scripts
-func loadScripts(scriptService *services.ScriptService) tea.Cmd {
-	return func() tea.Msg {
-		scripts, err := scriptService.FindAllScripts()
-		if err != nil {
-			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))
-		}
-
-		return ScriptsLoadedMsg(scripts)
-	}
-}
-
-// readScriptFile reads the content of a script file
 func readScriptFile(filePath string) (string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
@@ -91,3 +70,4 @@ func readScriptFile(filePath string) (string, error) {
 	}
 	return string(content), nil
 }
+

@@ -54,7 +54,7 @@ var (
 	PreviewStyle = lipgloss.NewStyle().
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(borderColor).
-			Padding(1)
+			Padding(0, 1)
 
 	PreviewTitleStyle = lipgloss.NewStyle().
 				Foreground(primaryColor).
@@ -160,31 +160,31 @@ var (
 
 	// Button styles
 	PrimaryButtonStyle = lipgloss.NewStyle().
-			Padding(0, 2).
-			Margin(0, 1).
-			Background(Colors.PrimaryButtonBackground).
-			Foreground(Colors.PrimaryButtonForeground)
-
-	PrimaryButtonFocusedStyle = lipgloss.NewStyle().
 				Padding(0, 2).
 				Margin(0, 1).
-				Background(Colors.DangerButtonBackground).
+				Background(Colors.PrimaryButtonBackground).
 				Foreground(Colors.PrimaryButtonForeground)
 
-	DangerButtonStyle = lipgloss.NewStyle().
-			Padding(0, 2).
-			Margin(0, 1).
-			Background(Colors.DangerButtonBackground).
-			Foreground(Colors.DangerButtonForeground).
-			BorderStyle(lipgloss.RoundedBorder())
+	PrimaryButtonFocusedStyle = lipgloss.NewStyle().
+					Padding(0, 2).
+					Margin(0, 1).
+					Background(Colors.DangerButtonBackground).
+					Foreground(Colors.PrimaryButtonForeground)
 
-	DangerButtonFocusedStyle = lipgloss.NewStyle().
+	DangerButtonStyle = lipgloss.NewStyle().
 				Padding(0, 2).
 				Margin(0, 1).
 				Background(Colors.DangerButtonBackground).
 				Foreground(Colors.DangerButtonForeground).
-				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(Colors.PrimaryButtonBorder)
+				BorderStyle(lipgloss.RoundedBorder())
+
+	DangerButtonFocusedStyle = lipgloss.NewStyle().
+					Padding(0, 2).
+					Margin(0, 1).
+					Background(Colors.DangerButtonBackground).
+					Foreground(Colors.DangerButtonForeground).
+					BorderStyle(lipgloss.RoundedBorder()).
+					BorderForeground(Colors.PrimaryButtonBorder)
 
 	// Form title style
 	FormTitleStyle = lipgloss.NewStyle().
@@ -194,34 +194,34 @@ var (
 
 	// Description text style
 	DescriptionStyle = lipgloss.NewStyle().
-			Foreground(Colors.MutedText).
-			Italic(true)
+				Foreground(Colors.MutedText).
+				Italic(true)
 
 	// Input styles for placeholders
 	PlaceholderInputStyle = lipgloss.NewStyle().
-			MarginBottom(1).
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(Colors.InputBorder)
-
-	PlaceholderInputFocusedStyle = lipgloss.NewStyle().
 				MarginBottom(1).
 				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(Colors.InputBorderFocused)
+				BorderForeground(Colors.InputBorder)
+
+	PlaceholderInputFocusedStyle = lipgloss.NewStyle().
+					MarginBottom(1).
+					BorderStyle(lipgloss.RoundedBorder()).
+					BorderForeground(Colors.InputBorderFocused)
 
 	// Instruction style
 	InstructionStyle = lipgloss.NewStyle().
-			Foreground(Colors.MutedText).
-			MarginTop(1)
+				Foreground(Colors.MutedText).
+				MarginTop(1)
 
 	// History list item style
 	HistoryItemStyle = lipgloss.NewStyle().
-			PaddingLeft(2)
+				PaddingLeft(2)
 
 	HistoryItemSelectedStyle = lipgloss.NewStyle().
-				PaddingLeft(2).
-				Background(selectedBgColor).
-				Foreground(selectedTextColor).
-				Bold(true)
+					PaddingLeft(2).
+					Background(selectedBgColor).
+					Foreground(selectedTextColor).
+					Bold(true)
 
 	// Button container centering style
 	ButtonContainerStyle = lipgloss.NewStyle().
@@ -242,14 +242,14 @@ var (
 			Padding(0, 1)
 
 	ListFocusedStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(primaryColor).
-			Padding(0, 1)
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(primaryColor).
+				Padding(0, 1)
 
 	PreviewFocusedStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(primaryColor).
-			Padding(1)
+				BorderStyle(lipgloss.RoundedBorder()).
+				BorderForeground(primaryColor).
+				Padding(0, 1)
 
 	FooterStyle = lipgloss.NewStyle().
 			Background(borderColor).
@@ -266,10 +266,10 @@ var (
 			Padding(0, 1)
 
 	ListItemSelectedStyle = lipgloss.NewStyle().
-			Background(selectedBgColor).
-			Foreground(selectedTextColor).
-			Bold(true).
-			Padding(0, 1)
+				Background(selectedBgColor).
+				Foreground(selectedTextColor).
+				Bold(true).
+				Padding(0, 1)
 
 	NoScriptsStyle = lipgloss.NewStyle().
 			Foreground(mutedTextColor).
@@ -291,7 +291,6 @@ func GetScopeStyle(scope string) lipgloss.Style {
 	}
 }
 
-// FormatScopeIndicator returns a styled scope indicator
 func FormatScopeIndicator(scope string) string {
 	scopeType := getScopeType(scope)
 	style := GetScopeStyle(scopeType)
@@ -307,26 +306,23 @@ func FormatScopeIndicator(scope string) string {
 	}
 }
 
-// getScopeType determines the scope type from a scope path
 func getScopeType(scope string) string {
 	if scope == "global" {
 		return "global"
 	}
-	
-	// Get current working directory to determine if it's local or parent
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "other"
 	}
-	
+
 	if scope == cwd {
 		return "local"
 	}
-	
-	// Check if it's a parent directory
+
 	if strings.HasPrefix(cwd, scope+string(filepath.Separator)) {
 		return "parent"
 	}
-	
+
 	return "other"
 }
