@@ -316,13 +316,6 @@ func (m *MainListScreen) updatePreview() tea.Cmd {
 	return nil
 }
 
-func (m *MainListScreen) getScopeDisplayName(scope string) string {
-	if m.container != nil {
-		return m.container.ScriptService.GetScopeDisplayName(scope)
-	}
-	return scope
-}
-
 func (m *MainListScreen) renderMainView() string {
 	listWidth := min(50, m.width/2)
 	previewWidth := m.width - listWidth

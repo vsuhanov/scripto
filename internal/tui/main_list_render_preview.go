@@ -29,9 +29,9 @@ func (m *MainListScreen) renderPreview(maxWidth, maxHeight int) string {
 		Height(maxHeight - totalVerticalBorder).
 		MaxHeight(maxHeight)
 
-	rendered := previewStyle.Render("Preview")
+	rendered := previewStyle.Render(m.formatPreviewContent(m.selectedScript))
 	log.Printf("renderPreview - rendered - rendered.Width: %v, rendered.Height: %v", lipgloss.Width(rendered), lipgloss.Height(rendered))
-
+	
 	return rendered
 }
 
@@ -54,7 +54,7 @@ func (m *MainListScreen) formatPreviewContent(script *entities.Script) string {
 		sections = append(sections, fileContent)
 	}
 
-	return strings.Join(sections, "\n\n")
+	return strings.Join(sections, "\n")
 }
 
 func (m *MainListScreen) formatPreviewTitle(selected *entities.Script) string {
@@ -130,3 +130,12 @@ func (m *MainListScreen) formatPreviewFileContent(filePath string, maxWidth int)
 
 	return title + "\n" + styledContent
 }
+
+func (m *MainListScreen) getScopeDisplayName(scope string) string {
+	if m.container != nil {
+		return m.container.ScriptService.GetScopeDisplayName(scope)
+	}
+	return scope
+}
+
+
