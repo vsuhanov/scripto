@@ -86,13 +86,7 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))
 		}
 
-		result := make([]*entities.Script, len(scripts))
-
-		for i, v := range scripts {
-			result[i] = v.Script
-		}
-
-		return ScriptsLoadedMsg(result)
+		return ScriptsLoadedMsg(scripts)
 	}
 }
 

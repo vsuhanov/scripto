@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"scripto/entities"
-	"scripto/internal/script"
 	"scripto/internal/storage"
 )
 
@@ -246,8 +244,8 @@ func (s *ScriptService) Reload() error {
 	return nil
 }
 
-func (s *ScriptService) FindAllScripts() ([]script.MatchResult, error) {
-	var results []script.MatchResult
+func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
+	var results []*entities.Script
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -259,9 +257,7 @@ func (s *ScriptService) FindAllScripts() ([]script.MatchResult, error) {
 	if scripts, exists := s.config[cwd]; exists {
 		for _, scriptEnt := range scripts {
 			scriptEnt.Scope = cwd
-			results = append(results, script.MatchResult{
-				Script: scriptEnt,
-			})
+			results = append(results, scriptEnt)
 		}
 		seen[cwd] = true
 	}
@@ -277,9 +273,7 @@ func (s *ScriptService) FindAllScripts() ([]script.MatchResult, error) {
 			if scripts, exists := s.config[parent]; exists {
 				for _, scriptEnt := range scripts {
 					scriptEnt.Scope = parent
-					results = append(results, script.MatchResult{
-						Script: scriptEnt,
-					})
+					results = append(results, scriptEnt)
 				}
 			}
 			seen[parent] = true
@@ -291,83 +285,53 @@ func (s *ScriptService) FindAllScripts() ([]script.MatchResult, error) {
 	if scripts, exists := s.config["global"]; exists {
 		for _, scriptEnt := range scripts {
 			scriptEnt.Scope = "global"
-			results = append(results, script.MatchResult{
-				Script: scriptEnt,
-			})
+			results = append(results, scriptEnt)
 		}
 	}
 
 	return results, nil
 }
 
-func (s *ScriptService) Match(input string) (*script.MatchResult, error) {
+func (s *ScriptService) Match(input string) (*entities.Script, error) {
 	allScripts, err := s.FindAllScripts()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, result := range allScripts {
-		if result.Script.Name != "" && result.Script.Name == input {
-			result.Type = script.ExactName
-			result.Confidence = 1.0
-			return &result, nil
+	for _, script := range allScripts {
+		if script.Name != "" && script.Name == input {
+			return script, nil
 		}
 	}
 
-	var candidates []script.MatchResult
-
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].Confidence != candidates[j].Confidence {
-			return candidates[i].Confidence > candidates[j].Confidence
-		}
-		return s.getScopePriority(candidates[i].Script.Scope) < s.getScopePriority(candidates[j].Script.Scope)
-	})
-
-	if len(candidates) > 0 {
-		return &candidates[0], nil
-	}
-
-	return &script.MatchResult{Type: script.NoMatch}, nil
+	return nil, nil
 }
 
-func (s *ScriptService) FilterByKeyword(keyword string) ([]script.MatchResult, error) {
+func (s *ScriptService) FilterByKeyword(keyword string) ([]*entities.Script, error) {
 	allScripts, err := s.FindAllScripts()
 	if err != nil {
 		return nil, err
 	}
 
-	var filtered []script.MatchResult
+	var filtered []*entities.Script
 	keyword = strings.ToLower(keyword)
 
-	for _, result := range allScripts {
-		searchText := strings.ToLower(result.Script.Name + " " + result.Script.Description)
+	for _, script := range allScripts {
+		searchText := strings.ToLower(script.Name + " " + script.Description)
 		if strings.Contains(searchText, keyword) {
-			result.Confidence = s.calculateKeywordConfidence(keyword, result.Script)
-			filtered = append(filtered, result)
+			filtered = append(filtered, script)
 		}
 	}
-
-	sort.Slice(filtered, func(i, j int) bool {
-		if filtered[i].Confidence != filtered[j].Confidence {
-			return filtered[i].Confidence > filtered[j].Confidence
-		}
-		return s.getScopePriority(filtered[i].Script.Scope) < s.getScopePriority(filtered[j].Script.Scope)
-	})
 
 	return filtered, nil
 }
 
-func (s *ScriptService) FindScriptByFilePath(filePath string) (*script.MatchResult, error) {
+func (s *ScriptService) FindScriptByFilePath(filePath string) (*entities.Script, error) {
 	for scope, scripts := range s.config {
 		for _, scriptEnt := range scripts {
 			if scriptEnt.FilePath == filePath {
-				matchResult := &script.MatchResult{
-					Type:       script.ExactName,
-					Script:     scriptEnt,
-					Confidence: 1.0,
-				}
-				matchResult.Script.Scope = scope
-				return matchResult, nil
+				scriptEnt.Scope = scope
+				return scriptEnt, nil
 			}
 		}
 	}

@@ -3,8 +3,8 @@ package services
 import (
 	"fmt"
 	"os"
+	"scripto/entities"
 	"scripto/internal/args"
-	"scripto/internal/script"
 	"strings"
 )
 
@@ -20,20 +20,20 @@ func NewExecutionService() *ExecutionService {
 	return &ExecutionService{}
 }
 
-func (es *ExecutionService) ProcessScriptArguments(matchResult *script.MatchResult, scriptArgs []string) (*ArgumentProcessingResult, error) {
-	if matchResult.Script.FilePath == "" {
+func (es *ExecutionService) ProcessScriptArguments(s *entities.Script, scriptArgs []string) (*ArgumentProcessingResult, error) {
+	if s.FilePath == "" {
 		return nil, fmt.Errorf("script has no file path or command content")
 	}
 
-	content, err := os.ReadFile(matchResult.Script.FilePath)
+	content, err := os.ReadFile(s.FilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read script file %s: %w", matchResult.Script.FilePath, err)
+		return nil, fmt.Errorf("failed to read script file %s: %w", s.FilePath, err)
 	}
 
 	contentStr := string(content)
 
 	if strings.HasPrefix(contentStr, "#!") {
-		finalCommand := matchResult.Script.FilePath
+		finalCommand := s.FilePath
 		for _, arg := range scriptArgs {
 			if strings.Contains(arg, " ") && !strings.HasPrefix(arg, "\"") {
 				finalCommand += fmt.Sprintf(" \"%s\"", arg)
@@ -47,7 +47,7 @@ func (es *ExecutionService) ProcessScriptArguments(matchResult *script.MatchResu
 		}, nil
 	}
 
-	processor := args.NewArgumentProcessor(matchResult.Script)
+	processor := args.NewArgumentProcessor(s)
 
 	if err := processor.ValidateArguments(scriptArgs); err != nil {
 		return nil, err
@@ -94,8 +94,8 @@ func (es *ExecutionService) ProcessScriptArguments(matchResult *script.MatchResu
 	}, nil
 }
 
-func (es *ExecutionService) PrepareExecution(matchResult *script.MatchResult, scriptArgs []string, placeholderValues map[string]string) (string, error) {
-	processor := args.NewArgumentProcessor(matchResult.Script)
+func (es *ExecutionService) PrepareExecution(s *entities.Script, scriptArgs []string, placeholderValues map[string]string) (string, error) {
+	processor := args.NewArgumentProcessor(s)
 
 	result, err := processor.ProcessArguments(scriptArgs)
 	if err != nil {

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"scripto/internal/script"
+	"scripto/entities"
 	"scripto/internal/services"
 	"scripto/internal/tui"
 )
@@ -89,15 +89,12 @@ func executeScript(container *services.Container, userArgs []string) error {
 		return fmt.Errorf("failed to match script: %w", err)
 	}
 
-	switch matchResult.Type {
-	case script.ExactName, script.PartialCommand:
+	if matchResult != nil {
 		return executeFoundScript(container, matchResult, scriptArgs)
-	case script.NoMatch:
-		fullInput := strings.Join(userArgs, " ")
-		return handleNoMatch(container, fullInput)
-	default:
-		return fmt.Errorf("unknown match type")
 	}
+
+	fullInput := strings.Join(userArgs, " ")
+	return handleNoMatch(container, fullInput)
 }
 
 func parseScriptNameAndArgs(userArgs []string) (string, []string) {
@@ -132,8 +129,8 @@ func parseScriptNameAndArgs(userArgs []string) (string, []string) {
 	return scriptName, scriptArgs
 }
 
-func executeFoundScript(container *services.Container, matchResult *script.MatchResult, scriptArgs []string) error {
-	processingResult, err := container.ExecutionService.ProcessScriptArguments(matchResult, scriptArgs)
+func executeFoundScript(container *services.Container, scriptEnt *entities.Script, scriptArgs []string) error {
+	processingResult, err := container.ExecutionService.ProcessScriptArguments(scriptEnt, scriptArgs)
 	if err != nil {
 		return err
 	}
@@ -156,7 +153,7 @@ func executeFoundScript(container *services.Container, matchResult *script.Match
 		return fmt.Errorf("operation cancelled by user")
 	}
 
-	finalCommand, err := container.ExecutionService.PrepareExecution(matchResult, scriptArgs, formResult.Values)
+	finalCommand, err := container.ExecutionService.PrepareExecution(scriptEnt, scriptArgs, formResult.Values)
 	if err != nil {
 		return err
 	}
@@ -195,13 +192,7 @@ func handleNoMatch(container *services.Container, input string) error {
 
 	fmt.Printf("Saved script successfully\n")
 
-	matchResult := &script.MatchResult{
-		Type:       script.ExactName,
-		Script:     result.Script,
-		Confidence: 1.0,
-	}
-
-	return executeFoundScript(container, matchResult, []string{})
+	return executeFoundScript(container, result.Script, []string{})
 }
 
 func handleCompletion(container *services.Container, args []string) {
@@ -238,24 +229,24 @@ func getCompletionSuggestions(container *services.Container, toComplete string) 
 	return convertScriptResultsToSuggestions(allScripts, separator, toComplete)
 }
 
-func convertScriptResultsToSuggestions(results []script.MatchResult, separator string, toComplete string) []string {
+func convertScriptResultsToSuggestions(results []*entities.Script, separator string, toComplete string) []string {
 	var suggestions []string
-	for _, result := range results {
-		if result.Script.Name != "" {
-			description := result.Script.Description
+	for _, script := range results {
+		if script.Name != "" {
+			description := script.Description
 			if description == "" {
-				description = result.Script.Description
+				description = script.Description
 			}
 
-			name := result.Script.Name
+			name := script.Name
 			if toComplete != "" {
 				if !strings.HasPrefix(name, toComplete) {
 				}
 			}
 
-			suggestions = append(suggestions, result.Script.Scope+separator+name+separator+description)
+			suggestions = append(suggestions, script.Scope+separator+name+separator+description)
 		} else {
-			command := result.Script.FilePath
+			command := script.FilePath
 			displayCommand := command
 
 			if toComplete != "" {
@@ -265,7 +256,7 @@ func convertScriptResultsToSuggestions(results []script.MatchResult, separator s
 				displayCommand = command
 			}
 
-			suggestions = append(suggestions, result.Script.Scope+separator+displayCommand+separator+result.Script.FilePath)
+			suggestions = append(suggestions, script.Scope+separator+displayCommand+separator+script.FilePath)
 		}
 	}
 	return suggestions
