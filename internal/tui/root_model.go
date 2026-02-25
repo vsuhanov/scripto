@@ -200,7 +200,7 @@ func (m *RootModel) handleEditScriptExternal(scriptPath string) tea.Cmd {
 	}
 }
 
-func (m *RootModel) handleSaveScript(script entities.Script, command string, original *entities.Script) tea.Cmd {
+func (m *RootModel) handleSaveScript(script *entities.Script, command string, original *entities.Script) tea.Cmd {
 	return func() tea.Msg {
 		if err := m.container.ScriptService.SaveScript(script, command, original); err != nil {
 			return ErrorMsg(fmt.Errorf("error saving script: %w", err))

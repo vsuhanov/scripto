@@ -15,7 +15,7 @@ const (
 )
 
 type (
-	ScriptsLoadedMsg []entities.Script
+	ScriptsLoadedMsg []*entities.Script
 	ErrorMsg         error
 	StatusMsg        string
 )
@@ -36,7 +36,7 @@ type ExecuteScriptMsg struct {
 }
 
 type SaveScriptMsg struct {
-	script   entities.Script
+	script   *entities.Script
 	command  string
 	original *entities.Script
 }
@@ -46,19 +46,19 @@ type EditScriptExternalMsg struct {
 }
 
 type DeleteScriptMsg struct {
-	script entities.Script
+	script *entities.Script
 }
 
 type RefreshScriptsMsg struct{}
 
 type ShowScriptEditorMsg struct {
-	script entities.Script
+	script *entities.Script
 }
 
 type ShowHistoryScreenMsg struct{}
 
 type ScriptEditorResult struct {
-	Script    entities.Script
+	Script    *entities.Script
 	Command   string
 	Cancelled bool
 }

@@ -23,7 +23,7 @@ type ScriptEditorScreen struct {
 	focusedField int // 0=name, 1=description, 2=command, 3=scope, 4=save, 5=cancel
 	active       bool
 
-	originalScript entities.Script
+	originalScript *entities.Script
 	isNewScript    bool
 	width          int
 	height         int
@@ -44,7 +44,7 @@ const (
 )
 
 
-func NewScriptEditorScreen(script entities.Script, isNewScript bool, container *services.Container) *ScriptEditorScreen {
+func NewScriptEditorScreen(script *entities.Script, isNewScript bool, container *services.Container) *ScriptEditorScreen {
 	return &ScriptEditorScreen{
 		originalScript: script,
 		isNewScript:    isNewScript,
@@ -61,10 +61,6 @@ func (e *ScriptEditorScreen) GetEditorValues() (name, description, command, scop
 	command = e.commandTextarea.Value()
 	scope = e.scopeInput.Value()
 	return
-}
-
-func (e *ScriptEditorScreen) GetOriginalScript() entities.Script {
-	return e.originalScript
 }
 
 func (e *ScriptEditorScreen) SetErrorMessage(msg string) {
@@ -173,7 +169,7 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if e.focusedField == EditorScreenFieldSave {
 			e.active = false
 			name, description, command, scope := e.GetEditorValues()
-			script := entities.Script{
+			script := &entities.Script{
 				Name:        name,
 				Description: description,
 				FilePath:    e.originalScript.FilePath,
@@ -183,7 +179,7 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return SaveScriptMsg{
 					script:   script,
 					command:  command,
-					original: &e.originalScript,
+					original: e.originalScript,
 				}
 			}
 		} else if e.focusedField == EditorScreenFieldCancel {

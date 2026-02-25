@@ -19,7 +19,7 @@ const (
 	scriptsDir = "scripts"
 )
 
-type Config map[string][]entities.Script
+type Config map[string][]*entities.Script
 
 
 func GetConfigPath() (string, error) {

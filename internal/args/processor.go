@@ -29,11 +29,11 @@ type ProcessResult struct {
 
 // ArgumentProcessor handles parsing and processing of script arguments
 type ArgumentProcessor struct {
-	script entities.Script
+	script *entities.Script
 }
 
 // NewArgumentProcessor creates a new ArgumentProcessor for a script
-func NewArgumentProcessor(script entities.Script) *ArgumentProcessor {
+func NewArgumentProcessor(script *entities.Script) *ArgumentProcessor {
 	return &ArgumentProcessor{script: script}
 }
 

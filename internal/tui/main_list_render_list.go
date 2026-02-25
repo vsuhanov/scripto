@@ -37,7 +37,7 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 			currentScope = script.Scope
 		}
 
-		item := m.formatScriptItem(script, i, maxListItemWidth, 3)
+		item := m.formatScriptItem(*script, i, maxListItemWidth, 3)
 		items = append(items, item)
 	}
 
@@ -154,7 +154,7 @@ func calculateScrollWindow(selectedLine, totalLines, visibleHeight int) (int, in
 }
 
 // TODO: this feels extremely unreliable, better to keep some structures with scopes
-func findSelectedLine(lines []string, selectedItemIndex int, scripts []entities.Script) int {
+func findSelectedLine(lines []string, selectedItemIndex int, scripts []*entities.Script) int {
 	scopeHeaders := 0
 	for i := 0; i <= selectedItemIndex && i < len(scripts); i++ {
 		if i == 0 || scripts[i].Scope != scripts[i-1].Scope {

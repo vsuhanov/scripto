@@ -20,7 +20,7 @@ const (
 
 type MatchResult struct {
 	Type       MatchType
-	Script     entities.Script
+	Script     *entities.Script
 	Confidence float64
 }
 
@@ -151,7 +151,7 @@ func calculateCommandConfidence(input, command string) float64 {
 	return matchLength / commandLength
 }
 
-func calculateKeywordConfidence(keyword string, script entities.Script) float64 {
+func calculateKeywordConfidence(keyword string, script *entities.Script) float64 {
 	confidence := 0.0
 
 	if strings.ToLower(script.Name) == keyword {

@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"log"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -16,8 +15,9 @@ import (
 )
 
 type MainListScreen struct {
-	scripts           []entities.Script
+	scripts           []*entities.Script
 	selectedItemIndex int
+	selectedScript    *entities.Script
 	config            storage.Config
 	configPath        string
 	container         *services.Container
@@ -64,6 +64,14 @@ func (m *MainListScreen) RefreshScripts() {
 	m.ready = false
 }
 
+func (m *MainListScreen) updateSelectedScript() {
+	if m.selectedItemIndex >= 0 && m.selectedItemIndex < len(m.scripts) {
+		m.selectedScript = m.scripts[m.selectedItemIndex]
+	} else {
+		m.selectedScript = nil
+	}
+}
+
 func (m *MainListScreen) Init() tea.Cmd {
 	return tea.Batch(
 		m.loadScripts(),
@@ -78,7 +86,7 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))
 		}
 
-		result := make([]entities.Script, len(scripts))
+		result := make([]*entities.Script, len(scripts))
 
 		for i, v := range scripts {
 			result[i] = v.Script
@@ -110,11 +118,12 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case ScriptsLoadedMsg:
-		m.scripts = []entities.Script(msg)
+		m.scripts = []*entities.Script(msg)
 		m.ready = true
 		if len(m.scripts) > 0 && m.selectedItemIndex >= len(m.scripts) {
 			m.selectedItemIndex = 0
 		}
+		m.updateSelectedScript()
 		return m, m.updatePreview()
 
 	case ErrorMsg:
@@ -182,10 +191,9 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
-		if len(m.scripts) > 0 {
-			selected := m.scripts[m.selectedItemIndex]
+		if m.selectedScript != nil {
 			return m, func() tea.Msg {
-				return ExecuteScriptMsg{scriptPath: selected.FilePath}
+				return ExecuteScriptMsg{scriptPath: m.selectedScript.FilePath}
 			}
 		}
 
@@ -204,24 +212,28 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "j", "down":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
 			m.selectedItemIndex = min(m.selectedItemIndex+1, len(m.scripts)-1)
+			m.updateSelectedScript()
 			return m, m.updatePreview()
 		}
 
 	case "k", "up":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
 			m.selectedItemIndex = max(0, m.selectedItemIndex-1)
+			m.updateSelectedScript()
 			return m, m.updatePreview()
 		}
 
 	case "g":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
 			m.selectedItemIndex = 0
+			m.updateSelectedScript()
 			return m, m.updatePreview()
 		}
 
 	case "G":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
 			m.selectedItemIndex = len(m.scripts) - 1
+			m.updateSelectedScript()
 			return m, m.updatePreview()
 		}
 	}
@@ -236,23 +248,21 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *MainListScreen) handleInlineEdit() (tea.Model, tea.Cmd) {
-	if len(m.scripts) == 0 {
+	if m.selectedScript == nil {
 		return m, nil
 	}
 
-	selected := m.scripts[m.selectedItemIndex]
 	return m, func() tea.Msg {
-		return ShowScriptEditorMsg{script: selected}
+		return ShowScriptEditorMsg{script: m.selectedScript}
 	}
 }
 
 func (m *MainListScreen) handleExternalEdit() (tea.Model, tea.Cmd) {
-	if len(m.scripts) == 0 {
+	if m.selectedScript == nil {
 		return m, nil
 	}
 
-	selected := m.scripts[m.selectedItemIndex]
-	scriptPath := selected.FilePath
+	scriptPath := m.selectedScript.FilePath
 
 	if scriptPath == "" {
 		m.statusMsg = "Cannot edit: script has no file path"
@@ -273,10 +283,9 @@ func (m *MainListScreen) handleDeleteRequest() (tea.Model, tea.Cmd) {
 }
 
 func (m *MainListScreen) handleImmediateDelete() (tea.Model, tea.Cmd) {
-	if len(m.scripts) > 0 {
-		selected := m.scripts[m.selectedItemIndex]
+	if m.selectedScript != nil {
 		return m, func() tea.Msg {
-			return DeleteScriptMsg{script: selected}
+			return DeleteScriptMsg{script: m.selectedScript}
 		}
 	}
 	return m, nil
@@ -286,10 +295,9 @@ func (m *MainListScreen) handleDeleteConfirmation(msg tea.KeyMsg) (tea.Model, te
 	switch msg.String() {
 	case "y", "Y":
 		m.confirmDelete = false
-		if len(m.scripts) > 0 {
-			selected := m.scripts[m.selectedItemIndex]
+		if m.selectedScript != nil {
 			return m, func() tea.Msg {
-				return DeleteScriptMsg{script: selected}
+				return DeleteScriptMsg{script: m.selectedScript}
 			}
 		}
 		return m, nil
@@ -304,13 +312,12 @@ func (m *MainListScreen) handleDeleteConfirmation(msg tea.KeyMsg) (tea.Model, te
 
 func (m *MainListScreen) updatePreview() tea.Cmd {
 	// #FIXME: content for the preview need to be set somehow differntly
-	if len(m.scripts) == 0 || m.selectedItemIndex >= len(m.scripts) {
+	if m.selectedScript == nil {
 		m.viewport.SetContent("")
 		return nil
 	}
 
-	selected := m.scripts[m.selectedItemIndex]
-	content := m.formatPreviewContent(selected)
+	content := m.formatPreviewContent(m.selectedScript)
 	m.viewport.SetContent(content)
 	return nil
 }
@@ -365,124 +372,6 @@ func (m *MainListScreen) renderHeader() string {
 	// )
 }
 
-func (m *MainListScreen) renderPreview(maxWidth, maxHeight int) string {
-	totalVerticalBorder := 2
-	totalHorizontalBorder := 2
-
-	previewStyle := PreviewStyle
-	if m.focusedPane == "preview" {
-		previewStyle = PreviewFocusedStyle
-	}
-
-	log.Printf("renderPreview - maxWidth: %v, maxHeight: %v", maxWidth, maxHeight)
-
-	previewStyle = previewStyle.
-		Width(maxWidth - totalHorizontalBorder).
-		MaxWidth(maxWidth).
-		Height(maxHeight - totalVerticalBorder).
-		MaxHeight(maxHeight)
-
-	rendered := previewStyle.Render("Preview")
-	log.Printf("renderPreview - rendered - rendered.Width: %v, rendered.Height: %v", lipgloss.Width(rendered), lipgloss.Height(rendered))
-
-	return rendered
-}
-
-func (m *MainListScreen) formatPreviewContent(script entities.Script) string {
-	var sections []string
-
-	title := m.formatPreviewTitle(script)
-	sections = append(sections, title)
-
-	metadata := m.formatPreviewMetadata(script)
-	sections = append(sections, metadata)
-
-	if script.Description != "" {
-		description := m.formatPreviewDescription(script.Description, m.maxWidth)
-		sections = append(sections, description)
-	}
-
-	if script.FilePath != "" {
-		fileContent := m.formatPreviewFileContent(script.FilePath, m.maxWidth)
-		sections = append(sections, fileContent)
-	}
-
-	return strings.Join(sections, "\n\n")
-}
-
-func (m *MainListScreen) formatPreviewTitle(selected entities.Script) string {
-	scopeIndicator := FormatScopeIndicator(selected.Scope)
-
-	var title string
-	if selected.Name != "" {
-		title = selected.Name
-	} else {
-		title = "Unnamed Script"
-	}
-
-	return PreviewTitleStyle.Render(fmt.Sprintf("%s %s", scopeIndicator, title))
-}
-
-func (m *MainListScreen) formatPreviewMetadata(selected entities.Script) string {
-	var metadata []string
-
-	if selected.Scope == "global" {
-		metadata = append(metadata, "Scope: global")
-	} else {
-		scopeLabel := m.getScopeDisplayName(selected.Scope)
-		metadata = append(metadata, fmt.Sprintf("Scope: %s", scopeLabel))
-
-		dir := selected.Scope
-		if len(dir) > 50 {
-			dir = "..." + dir[len(dir)-47:]
-		}
-		metadata = append(metadata, fmt.Sprintf("Directory: %s", dir))
-	}
-
-	if selected.FilePath != "" {
-		filename := filepath.Base(selected.FilePath)
-		metadata = append(metadata, fmt.Sprintf("File: %s", filename))
-	}
-
-	return PreviewContentStyle.Render(strings.Join(metadata, "\n"))
-}
-
-func (m *MainListScreen) formatPreviewDescription(description string, maxWidth int) string {
-	title := PreviewTitleStyle.Render("Description:")
-	wrappedDesc := m.wrapText(description, maxWidth)
-	content := PreviewContentStyle.Render(wrappedDesc)
-	return title + "\n" + content
-}
-
-func (m *MainListScreen) formatPreviewFileContent(filePath string, maxWidth int) string {
-	content, err := readScriptFile(filePath)
-	if err != nil {
-		return PreviewContentStyle.Render(fmt.Sprintf("Error reading file: %v", err))
-	}
-
-	title := PreviewTitleStyle.Render("File Content:")
-
-	lines := strings.Split(content, "\n")
-	if len(lines) > 10 {
-		lines = lines[:10]
-		lines = append(lines, "...")
-	}
-
-	var wrappedLines []string
-	for _, line := range lines {
-		if len(line) > maxWidth {
-			wrapped := strings.Split(m.wrapText(line, maxWidth), "\n")
-			wrappedLines = append(wrappedLines, wrapped...)
-		} else {
-			wrappedLines = append(wrappedLines, line)
-		}
-	}
-
-	fileContent := strings.Join(wrappedLines, "\n")
-	styledContent := PreviewCommandStyle.Render(fileContent)
-
-	return title + "\n" + styledContent
-}
 func (m *MainListScreen) renderFooter() string {
 	var statusText string
 	if m.confirmDelete {
@@ -512,16 +401,6 @@ func (m *MainListScreen) renderFooter() string {
 	)
 }
 
-func (m *MainListScreen) truncateString(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
-
 func (m *MainListScreen) renderHelp() string {
 	helpText := `Scripto - Script Manager
 
@@ -546,51 +425,4 @@ Other:
 Press ? or Esc to close this help.`
 
 	return HelpScreenStyle.Width(m.width).Height(m.height).Render(helpText)
-}
-
-// #TODO: move this to some sort of math utils
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// TODO: this is also just a utility function
-func (m *MainListScreen) wrapText(text string, width int) string {
-	if width <= 0 {
-		return text
-	}
-
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return text
-	}
-
-	var lines []string
-	var currentLine string
-
-	for _, word := range words {
-		if len(currentLine)+len(word)+1 > width && currentLine != "" {
-			lines = append(lines, currentLine)
-			currentLine = word
-		} else if currentLine == "" {
-			currentLine = word
-		} else {
-			currentLine += " " + word
-		}
-	}
-
-	if currentLine != "" {
-		lines = append(lines, currentLine)
-	}
-
-	return strings.Join(lines, "\n")
 }
