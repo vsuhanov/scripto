@@ -50,7 +50,7 @@ func (m *MainListScreen) formatPreviewContent(script *entities.Script) string {
 	}
 
 	if script.FilePath != "" {
-		fileContent := m.formatPreviewFileContent(script.FilePath, m.maxWidth)
+		fileContent := m.formatPreviewFileContent()
 		sections = append(sections, fileContent)
 	}
 
@@ -67,11 +67,17 @@ func (m *MainListScreen) formatPreviewTitle(selected *entities.Script) string {
 		title = "Unnamed Script"
 	}
 
-	return PreviewTitleStyle.Render(fmt.Sprintf("%s %s", scopeIndicator, title))
+	style := PreviewTitleStyle
+	if m.previewNavMode && m.previewFocusedElement == previewFocusName {
+		style = PreviewTitleStyle.Background(Colors.SelectedBackground).Foreground(Colors.SelectedText)
+	}
+
+	return style.Render(fmt.Sprintf("%s %s", scopeIndicator, title))
 }
 
 func (m *MainListScreen) formatPreviewMetadata(selected *entities.Script) string {
 	var metadata []string
+	var dirLine string
 
 	if selected.Scope == "global" {
 		metadata = append(metadata, "Scope: global")
@@ -83,7 +89,13 @@ func (m *MainListScreen) formatPreviewMetadata(selected *entities.Script) string
 		if len(dir) > 50 {
 			dir = "..." + dir[len(dir)-47:]
 		}
-		metadata = append(metadata, fmt.Sprintf("Directory: %s", dir))
+		dirLine = fmt.Sprintf("Directory: %s", dir)
+		if m.previewNavMode && m.previewFocusedElement == previewFocusDirectory {
+			dirStyle := PreviewContentStyle.Background(Colors.SelectedBackground).Foreground(Colors.SelectedText)
+			metadata = append(metadata, dirStyle.Render(dirLine))
+		} else {
+			metadata = append(metadata, dirLine)
+		}
 	}
 
 	if selected.FilePath != "" {
@@ -101,34 +113,13 @@ func (m *MainListScreen) formatPreviewDescription(description string, maxWidth i
 	return title + "\n" + content
 }
 
-func (m *MainListScreen) formatPreviewFileContent(filePath string, maxWidth int) string {
-	content, err := readScriptFile(filePath)
-	if err != nil {
-		return PreviewContentStyle.Render(fmt.Sprintf("Error reading file: %v", err))
+func (m *MainListScreen) formatPreviewFileContent() string {
+	labelStyle := PreviewTitleStyle
+	if m.previewNavMode && m.previewFocusedElement == previewFocusViewport {
+		labelStyle = PreviewTitleStyle.Background(Colors.SelectedBackground).Foreground(Colors.SelectedText)
 	}
-
-	title := PreviewTitleStyle.Render("File Content:")
-
-	lines := strings.Split(content, "\n")
-	if len(lines) > 10 {
-		lines = lines[:10]
-		lines = append(lines, "...")
-	}
-
-	var wrappedLines []string
-	for _, line := range lines {
-		if len(line) > maxWidth {
-			wrapped := strings.Split(WrapText(line, maxWidth), "\n")
-			wrappedLines = append(wrappedLines, wrapped...)
-		} else {
-			wrappedLines = append(wrappedLines, line)
-		}
-	}
-
-	fileContent := strings.Join(wrappedLines, "\n")
-	styledContent := PreviewCommandStyle.Render(fileContent)
-
-	return title + "\n" + styledContent
+	title := labelStyle.Render("File Content:")
+	return title + "\n" + m.previewViewport.View()
 }
 
 func (m *MainListScreen) getScopeDisplayName(scope string) string {

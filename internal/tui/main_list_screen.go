@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -12,6 +13,13 @@ import (
 	"scripto/entities"
 	"scripto/internal/services"
 	"scripto/internal/storage"
+)
+
+const (
+	previewFocusName = iota
+	previewFocusDirectory
+	previewFocusViewport
+	previewFocusCount
 )
 
 type MainListScreen struct {
@@ -39,7 +47,10 @@ type MainListScreen struct {
 	statusMsg     string
 	quitting      bool
 
-	viewport viewport.Model
+	previewViewport      viewport.Model
+	previewViewportReady bool
+	previewNavMode       bool
+	previewFocusedElement int
 }
 
 func NewMainListScreen(container *services.Container) (*MainListScreen, error) {
@@ -52,7 +63,6 @@ func NewMainListScreen(container *services.Container) (*MainListScreen, error) {
 		configPath:  configPath,
 		container:   container,
 		focusedPane: "list",
-		viewport:    viewport.New(50, 10),
 	}, nil
 }
 
@@ -67,8 +77,10 @@ func (m *MainListScreen) RefreshScripts() {
 func (m *MainListScreen) updateSelectedScript() {
 	if m.selectedItemIndex >= 0 && m.selectedItemIndex < len(m.scripts) {
 		m.selectedScript = m.scripts[m.selectedItemIndex]
+		m.updatePreviewViewportContent()
 	} else {
 		m.selectedScript = nil
+		m.previewViewport.SetContent("")
 	}
 }
 
@@ -107,8 +119,17 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.visibleHeight = availableHeight
 		m.maxWidth = previewWidth
-		m.viewport.Width = previewWidth
-		m.viewport.Height = availableHeight
+
+		viewportWidth := previewWidth - 4
+		viewportHeight := max(1, availableHeight-12)
+		if !m.previewViewportReady {
+			m.previewViewport = viewport.New(viewportWidth, viewportHeight)
+			m.previewViewportReady = true
+		} else {
+			m.previewViewport.Width = viewportWidth
+			m.previewViewport.Height = viewportHeight
+		}
+
 		return m, nil
 
 	case ScriptsLoadedMsg:
@@ -134,7 +155,6 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
 }
 
@@ -154,6 +174,117 @@ func (m *MainListScreen) View() string {
 	return m.renderMainView()
 }
 
+func (m *MainListScreen) updatePreviewViewportContent() {
+	if m.selectedScript != nil && m.selectedScript.FilePath != "" {
+		content, err := readScriptFile(m.selectedScript.FilePath)
+		if err == nil {
+			m.previewViewport.SetContent(content)
+			m.previewViewport.GotoTop()
+		} else {
+			m.previewViewport.SetContent(fmt.Sprintf("Error reading file: %v", err))
+		}
+	} else {
+		m.previewViewport.SetContent("")
+	}
+}
+
+func (m *MainListScreen) isPreviewElementFocusable(element int) bool {
+	switch element {
+	case previewFocusName:
+		return true
+	case previewFocusDirectory:
+		return m.selectedScript != nil && m.selectedScript.Scope != "global"
+	case previewFocusViewport:
+		return m.selectedScript != nil && m.selectedScript.FilePath != ""
+	}
+	return false
+}
+
+func (m *MainListScreen) nextPreviewFocus(current, delta int) int {
+	for i := 0; i < previewFocusCount; i++ {
+		next := (current + delta + previewFocusCount) % previewFocusCount
+		current = next
+		if m.isPreviewElementFocusable(next) {
+			return next
+		}
+	}
+	return current
+}
+
+func (m *MainListScreen) firstFocusablePreviewElement() int {
+	for i := 0; i < previewFocusCount; i++ {
+		if m.isPreviewElementFocusable(i) {
+			return i
+		}
+	}
+	return 0
+}
+
+func (m *MainListScreen) getFocusedPreviewText() string {
+	if m.selectedScript == nil {
+		return ""
+	}
+	switch m.previewFocusedElement {
+	case previewFocusName:
+		return m.selectedScript.Name
+	case previewFocusDirectory:
+		return m.selectedScript.Scope
+	case previewFocusViewport:
+		content, _ := readScriptFile(m.selectedScript.FilePath)
+		return content
+	}
+	return ""
+}
+
+func (m *MainListScreen) handlePreviewNavKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.previewNavMode = false
+		m.focusedPane = "list"
+		return m, nil
+
+	case "tab":
+		m.previewFocusedElement = m.nextPreviewFocus(m.previewFocusedElement, 1)
+		return m, nil
+
+	case "shift+tab":
+		m.previewFocusedElement = m.nextPreviewFocus(m.previewFocusedElement, -1)
+		return m, nil
+
+	case "y":
+		text := m.getFocusedPreviewText()
+		_ = clipboard.WriteAll(text)
+		m.statusMsg = "Copied to clipboard"
+		return m, nil
+
+	case "j", "down":
+		if m.previewFocusedElement == previewFocusViewport {
+			m.previewViewport.ScrollDown(1)
+		}
+		return m, nil
+
+	case "k", "up":
+		if m.previewFocusedElement == previewFocusViewport {
+			m.previewViewport.ScrollUp(1)
+		}
+		return m, nil
+
+	case "h":
+		if m.previewFocusedElement == previewFocusViewport {
+			m.previewViewport.HalfPageUp()
+		}
+		return m, nil
+
+	case "l":
+		if m.previewFocusedElement == previewFocusViewport {
+			m.previewViewport.HalfPageDown()
+		}
+		return m, nil
+	}
+
+	return m, nil
+}
+
 func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.confirmDelete {
 		return m.handleDeleteConfirmation(msg)
@@ -171,7 +302,13 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			return ExitAppMsg{exitCode: ExitBuiltinComplete, message: ""}
 		}
+	}
 
+	if m.previewNavMode {
+		return m.handlePreviewNavKeys(msg)
+	}
+
+	switch msg.String() {
 	case "?":
 		m.showHelp = !m.showHelp
 		return m, nil
@@ -185,6 +322,11 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "enter":
+		if m.focusedPane == "preview" {
+			m.previewNavMode = true
+			m.previewFocusedElement = m.firstFocusablePreviewElement()
+			return m, nil
+		}
 		if m.selectedScript != nil {
 			return m, func() tea.Msg {
 				return ExecuteScriptMsg{scriptPath: m.selectedScript.FilePath}
@@ -234,7 +376,6 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.focusedPane == "preview" {
 		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
 	}
 
