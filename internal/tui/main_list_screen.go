@@ -118,7 +118,7 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectedItemIndex = 0
 		}
 		m.updateSelectedScript()
-		return m, m.updatePreview()
+		return m, nil
 
 	case ErrorMsg:
 		m.err = error(msg)
@@ -207,28 +207,28 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
 			m.selectedItemIndex = min(m.selectedItemIndex+1, len(m.scripts)-1)
 			m.updateSelectedScript()
-			return m, m.updatePreview()
+			return m, nil
 		}
 
 	case "k", "up":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
 			m.selectedItemIndex = max(0, m.selectedItemIndex-1)
 			m.updateSelectedScript()
-			return m, m.updatePreview()
+			return m, nil
 		}
 
 	case "g":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
 			m.selectedItemIndex = 0
 			m.updateSelectedScript()
-			return m, m.updatePreview()
+			return m, nil
 		}
 
 	case "G":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
 			m.selectedItemIndex = len(m.scripts) - 1
 			m.updateSelectedScript()
-			return m, m.updatePreview()
+			return m, nil
 		}
 	}
 
@@ -302,18 +302,6 @@ func (m *MainListScreen) handleDeleteConfirmation(msg tea.KeyMsg) (tea.Model, te
 		return m, nil
 	}
 	return m, nil
-}
-
-func (m *MainListScreen) updatePreview() tea.Cmd {
-	// #FIXME: content for the preview need to be set somehow differntly
-	if m.selectedScript == nil {
-		m.viewport.SetContent("")
-		return nil
-	}
-
-	content := m.formatPreviewContent(m.selectedScript)
-	m.viewport.SetContent(content)
-	return nil
 }
 
 func (m *MainListScreen) renderMainView() string {
