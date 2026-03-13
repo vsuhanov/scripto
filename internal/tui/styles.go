@@ -176,16 +176,13 @@ var (
 				Padding(0, 2).
 				Margin(0, 1).
 				Background(colors.DangerButtonBackground).
-				Foreground(colors.DangerButtonForeground).
-				BorderStyle(lipgloss.RoundedBorder())
+				Foreground(colors.DangerButtonForeground)
 
 	DangerButtonFocusedStyle = lipgloss.NewStyle().
 					Padding(0, 2).
 					Margin(0, 1).
 					Background(colors.DangerButtonBackground).
-					Foreground(colors.DangerButtonForeground).
-					BorderStyle(lipgloss.RoundedBorder()).
-					BorderForeground(colors.PrimaryButtonBorder)
+					Foreground(colors.DangerButtonForeground)
 
 	// Form title style
 	FormTitleStyle = lipgloss.NewStyle().
