@@ -112,7 +112,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ShowPlaceholderFormMsg:
 		m.pendingPlaceholderScript = msg.script
 		m.pendingPlaceholderAction = msg.action
-		form := NewPlaceholderForm(msg.placeholders)
+		form := NewPlaceholderForm(msg.script, msg.placeholders, m.width, m.height)
 		m.screenStack = append(m.screenStack, m.currentScreen)
 		m.currentScreen = form
 		return m, form.Init()

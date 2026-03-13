@@ -197,14 +197,14 @@ var (
 
 	// Input styles for placeholders
 	PlaceholderInputStyle = lipgloss.NewStyle().
-				MarginBottom(1).
-				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(colors.InputBorder)
+				MarginBottom(1)
+				// BorderStyle(lipgloss.RoundedBorder()).
+				// BorderForeground(colors.InputBorder)
 
 	PlaceholderInputFocusedStyle = lipgloss.NewStyle().
-					MarginBottom(1).
-					BorderStyle(lipgloss.RoundedBorder()).
-					BorderForeground(colors.InputBorderFocused)
+					MarginBottom(1)
+					// BorderStyle(lipgloss.RoundedBorder()).
+					// BorderForeground(colors.InputBorderFocused)
 
 	// Instruction style
 	InstructionStyle = lipgloss.NewStyle().

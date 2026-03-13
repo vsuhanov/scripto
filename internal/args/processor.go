@@ -10,7 +10,6 @@ import (
 	"scripto/entities"
 )
 
-// PlaceholderValue represents a placeholder and its resolved value
 type PlaceholderValue struct {
 	Name         string
 	Description  string
@@ -21,24 +20,20 @@ type PlaceholderValue struct {
 	IsPositional bool
 }
 
-// ProcessResult contains the result of argument processing
 type ProcessResult struct {
 	Placeholders map[string]PlaceholderValue
 	FinalCommand string
 	MissingArgs  []PlaceholderValue
 }
 
-// ArgumentProcessor handles parsing and processing of script arguments
 type ArgumentProcessor struct {
 	script *entities.Script
 }
 
-// NewArgumentProcessor creates a new ArgumentProcessor for a script
 func NewArgumentProcessor(script *entities.Script) *ArgumentProcessor {
 	return &ArgumentProcessor{script: script}
 }
 
-// getCommandContent reads the command content from the script's FilePath
 func (p *ArgumentProcessor) getCommandContent() (string, error) {
 	if p.script.FilePath == "" {
 		return "", fmt.Errorf("script has no file path")
@@ -52,7 +47,6 @@ func (p *ArgumentProcessor) getCommandContent() (string, error) {
 	return strings.TrimSpace(string(content)), nil
 }
 
-// HasPositionalPlaceholders checks if the script has any positional placeholders
 func (p *ArgumentProcessor) HasPositionalPlaceholders() (bool, error) {
 	placeholders, err := p.extractPlaceholderInfo()
 	if err != nil {
@@ -68,35 +62,28 @@ func (p *ArgumentProcessor) HasPositionalPlaceholders() (bool, error) {
 	return false, nil
 }
 
-// ProcessArguments processes the provided arguments against the script's placeholders
 func (p *ArgumentProcessor) ProcessArguments(args []string) (*ProcessResult, error) {
-	// Extract placeholder information from the command
 	placeholders, err := p.extractPlaceholderInfo()
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if this script has positional placeholders (disables named arguments)
 	hasPositional, err := p.HasPositionalPlaceholders()
 	if err != nil {
 		return nil, err
 	}
 
-	// Process the provided arguments
 	providedValues := p.parseProvidedArguments(args)
   log.Printf("args: %s", args)
   log.Printf("providedValues: %s", providedValues)
-	// If script has positional placeholders, reject any named arguments
 	if hasPositional && len(providedValues.Named) > 0 {
 		return nil, fmt.Errorf("named arguments not allowed when script contains positional placeholders")
 	}
 
-	// Match provided values to placeholders
 	result := &ProcessResult{
 		Placeholders: make(map[string]PlaceholderValue),
 	}
 
-	// If no positional placeholders, handle named arguments first
 	if !hasPositional {
 		for name, value := range providedValues.Named {
 			if placeholder, exists := placeholders[name]; exists {
@@ -107,7 +94,6 @@ func (p *ArgumentProcessor) ProcessArguments(args []string) (*ProcessResult, err
 		}
 	}
 
-	// Handle positional arguments for remaining placeholders
 	positionalIndex := 0
 	placeholderOrder := p.getPlaceholderOrder()
 
@@ -120,7 +106,6 @@ func (p *ArgumentProcessor) ProcessArguments(args []string) (*ProcessResult, err
 				result.Placeholders[name] = placeholder
 				positionalIndex++
 			} else {
-				// Missing argument - use default value if available
 				placeholder := placeholders[name]
 				if placeholder.DefaultValue != "" {
 					placeholder.Value = placeholder.DefaultValue
@@ -131,14 +116,12 @@ func (p *ArgumentProcessor) ProcessArguments(args []string) (*ProcessResult, err
 		}
 	}
 
-	// Identify missing arguments (those without values and no defaults)
 	for _, placeholder := range result.Placeholders {
 		if !placeholder.Provided && placeholder.DefaultValue == "" {
 			result.MissingArgs = append(result.MissingArgs, placeholder)
 		}
 	}
 
-	// Generate final command if all placeholders are provided or have defaults
 	if len(result.MissingArgs) == 0 {
 		result.FinalCommand = p.substitutePlaceholders(result.Placeholders)
     log.Printf("%s", result.FinalCommand)
@@ -147,13 +130,11 @@ func (p *ArgumentProcessor) ProcessArguments(args []string) (*ProcessResult, err
 	return result, nil
 }
 
-// ProvidedArguments represents parsed user input
 type ProvidedArguments struct {
 	Positional []string
 	Named      map[string]string
 }
 
-// parseProvidedArguments parses the user's arguments into positional and named arguments
 func (p *ArgumentProcessor) parseProvidedArguments(args []string) ProvidedArguments {
 	result := ProvidedArguments{
 		Named: make(map[string]string),
@@ -161,25 +142,20 @@ func (p *ArgumentProcessor) parseProvidedArguments(args []string) ProvidedArgume
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		// Check for named argument patterns: --name=value or --name value
 		if strings.HasPrefix(arg, "--") {
 			if strings.Contains(arg, "=") {
-				// --name=value format
 				parts := strings.SplitN(arg[2:], "=", 2)
 				if len(parts) == 2 {
 					result.Named[parts[0]] = parts[1]
 				}
 			} else {
-				// --name value format (check next argument)
 				name := arg[2:]
 				if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
 					result.Named[name] = args[i+1]
-					// Skip the next argument since we consumed it
 					i++
 				}
 			}
 		} else {
-			// Positional argument
 			result.Positional = append(result.Positional, arg)
 		}
 	}
@@ -211,7 +187,6 @@ func (p *ArgumentProcessor) buildPlaceholderRegex() *regexp.Regexp {
 	return regexp.MustCompile(pattern)
 }
 
-// extractPlaceholderInfo extracts placeholder information from the script command
 func (p *ArgumentProcessor) extractPlaceholderInfo() (map[string]PlaceholderValue, error) {
 	placeholders := make(map[string]PlaceholderValue)
 	positionalCounter := 0
@@ -291,12 +266,10 @@ func (p *ArgumentProcessor) extractPlaceholderInfo() (map[string]PlaceholderValu
 	return placeholders, nil
 }
 
-// GetPlaceholderOrder returns the order of placeholders as they appear in the command (public method)
 func (p *ArgumentProcessor) GetPlaceholderOrder() []string {
 	return p.getPlaceholderOrder()
 }
 
-// getPlaceholderOrder returns the order of placeholders as they appear in the command
 func (p *ArgumentProcessor) getPlaceholderOrder() []string {
 	var order []string
 
@@ -314,18 +287,15 @@ func (p *ArgumentProcessor) getPlaceholderOrder() []string {
 		var name string
 		
 		if match[0] == "%%" {
-			// Simple positional placeholder
 			positionalCounter++
 			name = fmt.Sprintf("arg%d", positionalCounter)
 		} else if len(match) >= 4 {
 			rawName := match[1]
 			
 			if rawName == "" {
-				// Positional placeholder with description/default
 				positionalCounter++
 				name = fmt.Sprintf("arg%d", positionalCounter)
 			} else {
-				// Named placeholder
 				name = rawName
 			}
 		}
@@ -339,7 +309,6 @@ func (p *ArgumentProcessor) getPlaceholderOrder() []string {
 	return order
 }
 
-// substitutePlaceholders replaces placeholders in the command with provided values
 func (p *ArgumentProcessor) substitutePlaceholders(placeholders map[string]PlaceholderValue) string {
 	command, err := p.getCommandContent()
 	if err != nil {
@@ -351,7 +320,6 @@ func (p *ArgumentProcessor) substitutePlaceholders(placeholders map[string]Place
 	
 	positionalCounter := 0
 	
-	// Create a replacement map for each specific placeholder occurrence
 	replacements := make(map[string]string)
 	
 	for _, match := range matches {
@@ -359,39 +327,31 @@ func (p *ArgumentProcessor) substitutePlaceholders(placeholders map[string]Place
 		var value string
 		
 		if match[0] == "%%" {
-			// Simple positional placeholder
 			positionalCounter++
 			placeholderKey = fmt.Sprintf("arg%d", positionalCounter)
 		} else if len(match) >= 4 {
 			rawName := match[1]
 			
 			if rawName == "" {
-				// Positional placeholder with description/default
 				positionalCounter++
 				placeholderKey = fmt.Sprintf("arg%d", positionalCounter)
 			} else {
-				// Named placeholder
 				placeholderKey = rawName
 			}
 		}
 		
-		// Get the value for this placeholder
 		if placeholder, exists := placeholders[placeholderKey]; exists && placeholder.Provided {
 			value = placeholder.Value
 		} else if placeholder, exists := placeholders[placeholderKey]; exists && placeholder.DefaultValue != "" {
-			// Use default value if no value provided
 			value = placeholder.DefaultValue
 		} else {
-			// Keep original placeholder if no value available
 			continue
 		}
 		
-		// Properly quote if it contains spaces
 		if strings.Contains(value, " ") && !strings.HasPrefix(value, "\"") {
 			value = fmt.Sprintf("\"%s\"", value)
 		}
 		
-		// Store the replacement
 		replacements[match[0]] = value
 	}
 	
@@ -403,12 +363,51 @@ func (p *ArgumentProcessor) substitutePlaceholders(placeholders map[string]Place
 	return result
 }
 
-// GetCompletionSuggestions returns completion suggestions for the given partial input
+func (p *ArgumentProcessor) BuildPreviewCommand(values map[string]string) string {
+	command, err := p.getCommandContent()
+	if err != nil {
+		return ""
+	}
+
+	re := p.buildPlaceholderRegex()
+	positionalCounter := 0
+
+	result := re.ReplaceAllStringFunc(command, func(match string) string {
+		submatches := re.FindStringSubmatch(match)
+		if submatches == nil {
+			return match
+		}
+
+		var key string
+		if match == "%%" {
+			positionalCounter++
+			key = fmt.Sprintf("arg%d", positionalCounter)
+		} else if len(submatches) >= 4 {
+			rawName := submatches[1]
+			if rawName == "" {
+				positionalCounter++
+				key = fmt.Sprintf("arg%d", positionalCounter)
+			} else {
+				key = rawName
+			}
+		}
+
+		if val, ok := values[key]; ok && val != "" {
+			if strings.Contains(val, " ") && !strings.HasPrefix(val, "\"") {
+				return fmt.Sprintf("\"%s\"", val)
+			}
+			return val
+		}
+		return match
+	})
+
+	return result
+}
+
 func (p *ArgumentProcessor) GetCompletionSuggestions(args []string) []string {
 	placeholders, _ := p.extractPlaceholderInfo()
 	var suggestions []string
 
-	// If no arguments provided, suggest all placeholder flags
 	if len(args) == 0 {
 		for name, placeholder := range placeholders {
 			suggestion := fmt.Sprintf("--%s=", name)
@@ -420,7 +419,6 @@ func (p *ArgumentProcessor) GetCompletionSuggestions(args []string) []string {
 		return suggestions
 	}
 
-	// Check if the last argument is an incomplete named argument
 	lastArg := args[len(args)-1]
 	if strings.HasPrefix(lastArg, "--") && !strings.Contains(lastArg, "=") {
 		name := lastArg[2:]
@@ -436,7 +434,6 @@ func (p *ArgumentProcessor) GetCompletionSuggestions(args []string) []string {
 	return suggestions
 }
 
-// isExecutableScript checks if the script is an executable (starts with shebang)
 func (p *ArgumentProcessor) isExecutableScript() (bool, error) {
 	if p.script.FilePath == "" {
 		return false, nil
@@ -450,17 +447,13 @@ func (p *ArgumentProcessor) isExecutableScript() (bool, error) {
 	return strings.HasPrefix(string(content), "#!"), nil
 }
 
-// ValidateArguments checks if the provided arguments are valid for the script
 func (p *ArgumentProcessor) ValidateArguments(args []string) error {
-	// Check if this is an executable script
 	isExecutable, err := p.isExecutableScript()
 	if err != nil {
 		log.Printf("DEBUG ValidateArguments: failed to check if executable: %v", err)
-		// Continue with validation anyway
 	}
 	
 	if isExecutable {
-		// Executable scripts accept any arguments, no validation needed
 		log.Printf("DEBUG ValidateArguments: script is executable, skipping validation")
 		return nil
 	}
@@ -468,7 +461,6 @@ func (p *ArgumentProcessor) ValidateArguments(args []string) error {
 	placeholders, _ := p.extractPlaceholderInfo()
 	providedArgs := p.parseProvidedArguments(args)
 
-	// Log placeholder information for debugging
 	log.Printf("DEBUG ValidateArguments: script.FilePath=%s", p.script.FilePath)
 	log.Printf("DEBUG ValidateArguments: found %d placeholders", len(placeholders))
 	for name, ph := range placeholders {
@@ -476,14 +468,12 @@ func (p *ArgumentProcessor) ValidateArguments(args []string) error {
 	}
 	log.Printf("DEBUG ValidateArguments: provided args: positional=%v, named=%v", providedArgs.Positional, providedArgs.Named)
 
-	// Check for unknown named arguments
 	for name := range providedArgs.Named {
 		if _, exists := placeholders[name]; !exists {
 			return fmt.Errorf("unknown argument: --%s", name)
 		}
 	}
 
-	// Check if too many positional arguments provided
 	if len(providedArgs.Positional) > len(placeholders) {
 		return fmt.Errorf("too many arguments provided: expected %d, got %d",
 			len(placeholders), len(providedArgs.Positional))
