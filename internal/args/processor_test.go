@@ -156,6 +156,98 @@ func TestProcessArguments_NeedsForm_WhenNoArgsProvided(t *testing.T) {
 	}
 }
 
+func TestSubstitutePlaceholders_QuotedPlaceholder_ValueWithSpaces(t *testing.T) {
+	s := scriptWithContent(t, `echo "%name:your name:hello world%"`)
+	p := NewArgumentProcessor(s)
+
+	result, err := p.ProcessArguments([]string{"--name=hello world"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `echo "hello world"`
+	if result.FinalCommand != expected {
+		t.Errorf("expected %q, got %q", expected, result.FinalCommand)
+	}
+}
+
+func TestSubstitutePlaceholders_QuotedPlaceholder_DefaultValueWithSpaces(t *testing.T) {
+	s := scriptWithContent(t, `echo "%name:your name:hello world%"`)
+	p := NewArgumentProcessor(s)
+
+	result, err := p.ProcessArguments([]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `echo "hello world"`
+	if result.FinalCommand != expected {
+		t.Errorf("expected %q, got %q", expected, result.FinalCommand)
+	}
+}
+
+func TestSubstitutePlaceholders_UnquotedPlaceholder_ValueWithSpaces(t *testing.T) {
+	s := scriptWithContent(t, `echo %name%`)
+	p := NewArgumentProcessor(s)
+
+	result, err := p.ProcessArguments([]string{"--name=hello world"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `echo "hello world"`
+	if result.FinalCommand != expected {
+		t.Errorf("expected %q, got %q", expected, result.FinalCommand)
+	}
+}
+
+func TestSubstitutePlaceholders_TwoQuotedPlaceholders_SimpleValues(t *testing.T) {
+	s := scriptWithContent(t, `echo "%foobar:description:there is default value%" "%second:this is longer description%"`)
+	p := NewArgumentProcessor(s)
+
+	result, err := p.ProcessArguments([]string{"--foobar=val1", "--second=val2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `echo "val1" "val2"`
+	if result.FinalCommand != expected {
+		t.Errorf("expected %q, got %q", expected, result.FinalCommand)
+	}
+}
+
+func TestSubstitutePlaceholders_TwoQuotedPlaceholders_DefaultValueWithSpaces(t *testing.T) {
+	s := scriptWithContent(t, `echo "%foobar:description:there is default value%" "%second:this is longer description%"`)
+	p := NewArgumentProcessor(s)
+
+	result, err := p.ProcessArguments([]string{"--foobar=there is default value", "--second=val2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `echo "there is default value" "val2"`
+	if result.FinalCommand != expected {
+		t.Errorf("expected %q, got %q", expected, result.FinalCommand)
+	}
+}
+
+func TestBuildPreviewCommand_QuotedPlaceholder_ValueWithSpaces(t *testing.T) {
+	s := scriptWithContent(t, `echo "%name:your name%"`)
+	p := NewArgumentProcessor(s)
+
+	result := p.BuildPreviewCommand(map[string]string{"name": "hello world"})
+	expected := `echo "hello world"`
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestBuildPreviewCommand_UnquotedPlaceholder_ValueWithSpaces(t *testing.T) {
+	s := scriptWithContent(t, `echo %name%`)
+	p := NewArgumentProcessor(s)
+
+	result := p.BuildPreviewCommand(map[string]string{"name": "hello world"})
+	expected := `echo "hello world"`
+	if result != expected {
+		t.Errorf("expected %q, got %q", expected, result)
+	}
+}
+
 func TestScriptWithFilePath_AbsolutePath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "myscript.txt")

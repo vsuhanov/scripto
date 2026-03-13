@@ -348,13 +348,14 @@ func (p *ArgumentProcessor) substitutePlaceholders(placeholders map[string]Place
 			continue
 		}
 		
-		if strings.Contains(value, " ") && !strings.HasPrefix(value, "\"") {
+		isInQuotes := strings.Contains(command, `"`+match[0]+`"`)
+		if !isInQuotes && strings.Contains(value, " ") && !strings.HasPrefix(value, "\"") {
 			value = fmt.Sprintf("\"%s\"", value)
 		}
-		
+
 		replacements[match[0]] = value
 	}
-	
+
 	result := command
 	for placeholder, value := range replacements {
 		result = strings.ReplaceAll(result, placeholder, value)
@@ -393,7 +394,8 @@ func (p *ArgumentProcessor) BuildPreviewCommand(values map[string]string) string
 		}
 
 		if val, ok := values[key]; ok && val != "" {
-			if strings.Contains(val, " ") && !strings.HasPrefix(val, "\"") {
+			isInQuotes := strings.Contains(command, `"`+match+`"`)
+			if !isInQuotes && strings.Contains(val, " ") && !strings.HasPrefix(val, "\"") {
 				return fmt.Sprintf("\"%s\"", val)
 			}
 			return val
