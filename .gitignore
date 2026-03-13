@@ -4,3 +4,4 @@ CLAUDE.local.md
 bin/
 *.iml
 __debug_*
+.DS_Store
