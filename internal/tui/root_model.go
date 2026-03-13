@@ -148,6 +148,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SaveScriptMsg:
 		return m, m.handleSaveScript(msg.script, msg.command, msg.original)
 
+	case HistoryCommandSelectedMsg:
+		script := &entities.Script{}
+		editor := NewScriptEditorScreen(script, true, m.container)
+		editor.initialCommand = msg.command
+		m.currentScreen = editor
+		return m, editor.Init()
+
 	case ShowHistoryScreenMsg:
 		historyScreen := NewHistoryScreen(m.container)
 		m.screenStack = append(m.screenStack, m.currentScreen)

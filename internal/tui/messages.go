@@ -63,6 +63,10 @@ type ShowScriptEditorMsg struct {
 
 type ShowHistoryScreenMsg struct{}
 
+type HistoryCommandSelectedMsg struct {
+	command string
+}
+
 type ShowPlaceholderFormMsg struct {
 	script       *entities.Script
 	action       string

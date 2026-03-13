@@ -24,6 +24,7 @@ type ScriptEditorScreen struct {
 	active       bool
 
 	originalScript *entities.Script
+	initialCommand string
 	isNewScript    bool
 	width          int
 	height         int
@@ -95,6 +96,8 @@ func (e *ScriptEditorScreen) initializeComponents() {
 		if content, err := os.ReadFile(e.originalScript.FilePath); err == nil {
 			commandContent = strings.TrimSpace(string(content))
 		}
+	} else {
+		commandContent = e.initialCommand
 	}
 	e.commandTextarea.SetValue(commandContent)
 	e.commandTextarea.SetWidth(componentWidth)
@@ -126,6 +129,11 @@ func (e *ScriptEditorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		e.width = msg.Width
 		e.height = msg.Height
 		e.initializeComponents() // Reinitialize with new size
+		return e, nil
+
+	case ErrorMsg:
+		e.active = true
+		e.errorMessage = msg.Error()
 		return e, nil
 
 	case tea.KeyMsg:
@@ -175,11 +183,15 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				FilePath:    e.originalScript.FilePath,
 				Scope:       scope,
 			}
+			var original *entities.Script
+			if !e.isNewScript {
+				original = e.originalScript
+			}
 			return e, func() tea.Msg {
 				return SaveScriptMsg{
 					script:   script,
 					command:  command,
-					original: e.originalScript,
+					original: original,
 				}
 			}
 		} else if e.focusedField == EditorScreenFieldCancel {

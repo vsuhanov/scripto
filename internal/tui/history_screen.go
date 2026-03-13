@@ -154,10 +154,10 @@ func (h *HistoryScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		if selectedItem := h.list.SelectedItem(); selectedItem != nil {
-			if _, ok := selectedItem.(commandItem); ok {
+			if item, ok := selectedItem.(commandItem); ok {
 				h.active = false
 				return h, func() tea.Msg {
-					return NavigateBackMsg{}
+					return HistoryCommandSelectedMsg{command: item.command}
 				}
 			}
 		}
@@ -166,7 +166,7 @@ func (h *HistoryScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		h.active = false
 		return h, func() tea.Msg {
-			return NavigateBackMsg{}
+			return HistoryCommandSelectedMsg{command: ""}
 		}
 
 	default:
