@@ -1,5 +1,9 @@
 package services
-import "os"
+
+import (
+	"log"
+	"os"
+)
 
 type Container struct {
 	ScriptService    *ScriptService
@@ -14,12 +18,14 @@ func NewContainer() (*Container, error) {
 		return nil, err
 	}
 
+	log.Printf("SCRIPTO_CMD_FD=%v", os.Getenv("SCRIPTO_CMD_FD"))
+
 	return &Container{
 		ScriptService:    scriptService,
 		ExecutionService: NewExecutionService(),
-		TerminalService:  NewTerminalService(TerminalServiceOptions{
+		TerminalService: NewTerminalService(TerminalServiceOptions{
 			targetCommandFile: os.Getenv("SCRIPTO_CMD_FD"),
 		}),
-		HistoryService:  NewHistoryService(),
+		HistoryService: NewHistoryService(),
 	}, nil
 }
