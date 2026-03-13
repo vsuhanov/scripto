@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"scripto/entities"
 	"scripto/internal/services"
@@ -83,7 +84,10 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case ExecuteScriptMsg:
-		return m, m.handleExecuteScript(msg.scriptPath)
+		return m, m.handleExecuteScript(msg.script)
+
+	case CopyScriptToClipboardMsg:
+		return m, m.handleCopyScriptToClipboard(msg.script)
 
 	case EditScriptExternalMsg:
 		return m, m.handleEditScriptExternal(msg.scriptPath)
@@ -143,25 +147,15 @@ func (m RootModel) View() string {
 	return ""
 }
 
-func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
+func (m *RootModel) handleExecuteScript(script *entities.Script) tea.Cmd {
 	return func() tea.Msg {
-		if scriptPath == "" {
-			return ErrorMsg(fmt.Errorf("no script path provided for execution"))
-		}
-
-		matchResult, err := m.container.ScriptService.FindScriptByFilePath(scriptPath)
-		if err != nil {
-			return ErrorMsg(fmt.Errorf("failed to find script: %w", err))
-		}
-
-		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(matchResult, []string{})
+		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, []string{})
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
 		}
 
 		var finalCommand string
 		if !processingResult.NeedsPlaceholderForm {
-			var err error
 			finalCommand, err = m.container.ExecutionService.PrepareDirectExecution(processingResult)
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
@@ -176,7 +170,7 @@ func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
 				return ErrorMsg(fmt.Errorf("operation cancelled by user"))
 			}
 
-			finalCommand, err = m.container.ExecutionService.PrepareExecution(matchResult, []string{}, formResult.Values)
+			finalCommand, err = m.container.ExecutionService.PrepareExecution(script, []string{}, formResult.Values)
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
 			}
@@ -185,6 +179,38 @@ func (m *RootModel) handleExecuteScript(scriptPath string) tea.Cmd {
 		return ExecuteAppCommandMsg{
 			command: m.container.TerminalService.PrepareScriptExecution(finalCommand),
 		}
+	}
+}
+
+func (m *RootModel) handleCopyScriptToClipboard(script *entities.Script) tea.Cmd {
+	return func() tea.Msg {
+		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, []string{})
+		if err != nil {
+			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
+		}
+
+		var finalCommand string
+		if !processingResult.NeedsPlaceholderForm {
+			finalCommand, err = m.container.ExecutionService.PrepareDirectExecution(processingResult)
+			if err != nil {
+				return ErrorMsg(fmt.Errorf("failed to prepare command: %w", err))
+			}
+		} else {
+			formResult, err := RunPlaceholderForm(processingResult.Placeholders)
+			if err != nil {
+				return ErrorMsg(fmt.Errorf("failed to collect placeholder values: %w", err))
+			}
+			if formResult.Cancelled {
+				return StatusMsg("Copy cancelled")
+			}
+			finalCommand, err = m.container.ExecutionService.PrepareExecution(script, []string{}, formResult.Values)
+			if err != nil {
+				return ErrorMsg(fmt.Errorf("failed to prepare command: %w", err))
+			}
+		}
+
+		_ = clipboard.WriteAll(finalCommand)
+		return StatusMsg("Copied to clipboard")
 	}
 }
 

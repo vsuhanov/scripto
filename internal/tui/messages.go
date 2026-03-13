@@ -32,7 +32,7 @@ type ExitAppMsg struct {
 }
 
 type ExecuteScriptMsg struct {
-	scriptPath string
+	script *entities.Script
 }
 
 type SaveScriptMsg struct {
@@ -46,6 +46,10 @@ type EditScriptExternalMsg struct {
 }
 
 type DeleteScriptMsg struct {
+	script *entities.Script
+}
+
+type CopyScriptToClipboardMsg struct {
 	script *entities.Script
 }
 

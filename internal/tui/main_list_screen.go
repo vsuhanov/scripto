@@ -329,7 +329,7 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.selectedScript != nil {
 			return m, func() tea.Msg {
-				return ExecuteScriptMsg{scriptPath: m.selectedScript.FilePath}
+				return ExecuteScriptMsg{script: m.selectedScript}
 			}
 		}
 
@@ -371,6 +371,13 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedItemIndex = len(m.scripts) - 1
 			m.updateSelectedScript()
 			return m, nil
+		}
+
+	case "y":
+		if m.focusedPane == "list" && m.selectedScript != nil {
+			return m, func() tea.Msg {
+				return CopyScriptToClipboardMsg{script: m.selectedScript}
+			}
 		}
 	}
 
@@ -478,14 +485,6 @@ func (m *MainListScreen) renderHeader() string {
 	log.Printf("Header - Width: %d, TitleWidth: %d, HelpWidth: %d, Spacing: %d", m.width, lipgloss.Width(title), lipgloss.Width(help), max(0, m.width-lipgloss.Width(title)-lipgloss.Width(help)))
 
 	return title
-	// return HeaderStyle.Width(m.width).Height(3).Render(
-	// 	lipgloss.JoinHorizontal(
-	// 		lipgloss.Center,
-	// 		title,
-	// 		strings.Repeat(" ", max(0, m.width-lipgloss.Width(title)-lipgloss.Width(help))),
-	// 		help,
-	// 	),
-	// )
 }
 
 func (m *MainListScreen) renderFooter() string {
@@ -504,7 +503,7 @@ func (m *MainListScreen) renderFooter() string {
 	if m.confirmDelete {
 		keyHints = HelpStyle.Render("y/n: confirm/cancel")
 	} else {
-		keyHints = HelpStyle.Render("↵: execute • e: edit • E: external • d: delete • tab: switch pane")
+		keyHints = HelpStyle.Render("↵: execute • e: edit • E: external • d: delete • y: copy • tab: switch pane")
 	}
 
 	return FooterStyle.Width(m.width).Render(
@@ -533,7 +532,8 @@ Actions:
   E            Edit script in external editor
   d            Delete script (with confirmation)
   D            Delete script immediately
-  
+  y            Copy command to clipboard
+
 Other:
   ?            Toggle this help
   q, Ctrl+C    Quit
