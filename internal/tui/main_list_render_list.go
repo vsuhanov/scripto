@@ -48,7 +48,7 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 	var start, end int
 	if len(items) > maxPossibleContentHeight {
 		selectedLine := findSelectedLine(items, m.selectedItemIndex, m.scripts)
-		start, end = calculateScrollWindow(selectedLine, len(items), maxHeight-totalVerticalBorder)
+		start, end = calculateScrollWindow(selectedLine, len(items), maxPossibleContentHeight)
 		items = items[start:end]
 		content = strings.Join(items, "\n")
 	}

@@ -6,26 +6,27 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"scripto/internal/tui/colors"
 )
 
 var (
 	// Base colors
-	primaryColor   = Colors.Primary
-	secondaryColor = Colors.Secondary
-	accentColor    = Colors.Accent
-	errorColor     = Colors.Error
-	successColor   = Colors.Success
-	warningColor   = Colors.Warning
+	primaryColor   = colors.Primary
+	secondaryColor = colors.Secondary
+	accentColor    = colors.Accent
+	errorColor     = colors.Error
+	successColor   = colors.Success
+	warningColor   = colors.Warning
 
 	// Background colors
-	bgColor         = Colors.Background
-	selectedBgColor = Colors.SelectedBackground
-	borderColor     = Colors.Border
+	bgColor         = colors.Background
+	selectedBgColor = colors.SelectedBackground
+	borderColor     = colors.Border
 
 	// Text colors
-	textColor         = Colors.Text
-	mutedTextColor    = Colors.MutedText
-	selectedTextColor = Colors.SelectedText
+	textColor         = colors.Text
+	mutedTextColor    = colors.MutedText
+	selectedTextColor = colors.SelectedText
 
 	// Main container style
 	ContainerStyle = lipgloss.NewStyle().
@@ -66,7 +67,7 @@ var (
 
 	PreviewCommandStyle = lipgloss.NewStyle().
 				Foreground(accentColor).
-				Background(Colors.CommandBackground).
+				Background(colors.CommandBackground).
 				Padding(0, 1).
 				Margin(1, 0)
 
@@ -92,7 +93,7 @@ var (
 	// Status bar styles
 	StatusStyle = lipgloss.NewStyle().
 			Background(primaryColor).
-			Foreground(Colors.White).
+			Foreground(colors.White).
 			Padding(0, 1)
 
 	ErrorStyle = lipgloss.NewStyle().
@@ -121,11 +122,11 @@ var (
 
 	FieldInputStyle = lipgloss.NewStyle().
 			Foreground(textColor).
-			Background(Colors.InputBackground).
+			Background(colors.InputBackground).
 			Padding(0, 1).
 			Margin(0, 0, 1, 0).
 			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(Colors.InputBorder)
+			BorderForeground(colors.InputBorder)
 
 	FieldInputFocusedStyle = lipgloss.NewStyle().
 				Foreground(selectedTextColor).
@@ -133,15 +134,15 @@ var (
 				Padding(0, 1).
 				Margin(0, 0, 1, 0).
 				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(Colors.InputBorderFocused)
+				BorderForeground(colors.InputBorderFocused)
 
 	TextAreaStyle = lipgloss.NewStyle().
 			Foreground(textColor).
-			Background(Colors.InputBackground).
+			Background(colors.InputBackground).
 			Padding(1).
 			Margin(0, 0, 1, 0).
 			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(Colors.InputBorder)
+			BorderForeground(colors.InputBorder)
 
 	TextAreaFocusedStyle = lipgloss.NewStyle().
 				Foreground(selectedTextColor).
@@ -149,7 +150,7 @@ var (
 				Padding(1).
 				Margin(0, 0, 1, 0).
 				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(Colors.InputBorderFocused)
+				BorderForeground(colors.InputBorderFocused)
 
 	CheckboxStyle = lipgloss.NewStyle().
 			Foreground(textColor)
@@ -162,55 +163,55 @@ var (
 	PrimaryButtonStyle = lipgloss.NewStyle().
 				Padding(0, 2).
 				Margin(0, 1).
-				Background(Colors.PrimaryButtonBackground).
-				Foreground(Colors.PrimaryButtonForeground)
+				Background(colors.PrimaryButtonBackground).
+				Foreground(colors.PrimaryButtonForeground)
 
 	PrimaryButtonFocusedStyle = lipgloss.NewStyle().
 					Padding(0, 2).
 					Margin(0, 1).
-					Background(Colors.DangerButtonBackground).
-					Foreground(Colors.PrimaryButtonForeground)
+					Background(colors.DangerButtonBackground).
+					Foreground(colors.PrimaryButtonForeground)
 
 	DangerButtonStyle = lipgloss.NewStyle().
 				Padding(0, 2).
 				Margin(0, 1).
-				Background(Colors.DangerButtonBackground).
-				Foreground(Colors.DangerButtonForeground).
+				Background(colors.DangerButtonBackground).
+				Foreground(colors.DangerButtonForeground).
 				BorderStyle(lipgloss.RoundedBorder())
 
 	DangerButtonFocusedStyle = lipgloss.NewStyle().
 					Padding(0, 2).
 					Margin(0, 1).
-					Background(Colors.DangerButtonBackground).
-					Foreground(Colors.DangerButtonForeground).
+					Background(colors.DangerButtonBackground).
+					Foreground(colors.DangerButtonForeground).
 					BorderStyle(lipgloss.RoundedBorder()).
-					BorderForeground(Colors.PrimaryButtonBorder)
+					BorderForeground(colors.PrimaryButtonBorder)
 
 	// Form title style
 	FormTitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(Colors.Error).
+			Foreground(colors.Error).
 			MarginBottom(1)
 
 	// Description text style
 	DescriptionStyle = lipgloss.NewStyle().
-				Foreground(Colors.MutedText).
+				Foreground(colors.MutedText).
 				Italic(true)
 
 	// Input styles for placeholders
 	PlaceholderInputStyle = lipgloss.NewStyle().
 				MarginBottom(1).
 				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(Colors.InputBorder)
+				BorderForeground(colors.InputBorder)
 
 	PlaceholderInputFocusedStyle = lipgloss.NewStyle().
 					MarginBottom(1).
 					BorderStyle(lipgloss.RoundedBorder()).
-					BorderForeground(Colors.InputBorderFocused)
+					BorderForeground(colors.InputBorderFocused)
 
 	// Instruction style
 	InstructionStyle = lipgloss.NewStyle().
-				Foreground(Colors.MutedText).
+				Foreground(colors.MutedText).
 				MarginTop(1)
 
 	// History list item style
@@ -238,7 +239,7 @@ var (
 
 	HeaderStyle = lipgloss.NewStyle().
 			Background(primaryColor).
-			Foreground(Colors.White).
+			Foreground(colors.White).
 			Padding(0, 1)
 
 	ListFocusedStyle = lipgloss.NewStyle().

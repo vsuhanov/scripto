@@ -3,6 +3,12 @@ package services
 import (
 	"fmt"
 	"os"
+
+	"scripto/internal/tui/colors"
+	"scripto/internal/utils"
+
+	"github.com/charmbracelet/lipgloss"
+	xterm "github.com/charmbracelet/x/term"
 )
 
 type osExitFunc func(code int)
@@ -77,7 +83,30 @@ func (ts *TerminalService) ExecuteCommand(cmd TerminalServiceCommand) {
 	}
 }
 
+func printScriptBox(command string) {
+	width, _, err := xterm.GetSize(os.Stderr.Fd())
+	if err != nil || width <= 0 {
+		width = 80
+	}
+	titleStyle := lipgloss.NewStyle().Foreground(colors.Primary).Bold(true)
+	boxStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderTop(true).
+		BorderBottom(true).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderForeground(colors.Primary).
+		PaddingLeft(1).
+		Width(width - 2)
+
+	content := titleStyle.Render("Scripto command") + "\n" + command
+	fmt.Fprintln(os.Stderr, boxStyle.Render(content))
+}
+
 func (ts *TerminalService) executeScriptCommand(command string) {
+	if utils.IsStderrTerminal() {
+		printScriptBox(command)
+	}
 	cmdFdPath := ts.options.targetCommandFile
 	if cmdFdPath != "" {
 		_ = ts.writeFileFunc(cmdFdPath, []byte(command), 0600)

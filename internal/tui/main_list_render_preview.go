@@ -10,6 +10,7 @@ import (
 
 	"scripto/entities"
 	. "scripto/internal/utils"
+	"scripto/internal/tui/colors"
 )
 
 func (m *MainListScreen) renderPreview(maxWidth, maxHeight int) string {
@@ -69,7 +70,7 @@ func (m *MainListScreen) formatPreviewTitle(selected *entities.Script) string {
 
 	style := PreviewTitleStyle
 	if m.previewNavMode && m.previewFocusedElement == previewFocusName {
-		style = PreviewTitleStyle.Background(Colors.SelectedBackground).Foreground(Colors.SelectedText)
+		style = PreviewTitleStyle.Background(colors.SelectedBackground).Foreground(colors.SelectedText)
 	}
 
 	return style.Render(fmt.Sprintf("%s %s", scopeIndicator, title))
@@ -91,7 +92,7 @@ func (m *MainListScreen) formatPreviewMetadata(selected *entities.Script) string
 		}
 		dirLine = fmt.Sprintf("Directory: %s", dir)
 		if m.previewNavMode && m.previewFocusedElement == previewFocusDirectory {
-			dirStyle := PreviewContentStyle.Background(Colors.SelectedBackground).Foreground(Colors.SelectedText)
+			dirStyle := PreviewContentStyle.Background(colors.SelectedBackground).Foreground(colors.SelectedText)
 			metadata = append(metadata, dirStyle.Render(dirLine))
 		} else {
 			metadata = append(metadata, dirLine)
@@ -116,7 +117,7 @@ func (m *MainListScreen) formatPreviewDescription(description string, maxWidth i
 func (m *MainListScreen) formatPreviewFileContent() string {
 	labelStyle := PreviewTitleStyle
 	if m.previewNavMode && m.previewFocusedElement == previewFocusViewport {
-		labelStyle = PreviewTitleStyle.Background(Colors.SelectedBackground).Foreground(Colors.SelectedText)
+		labelStyle = PreviewTitleStyle.Background(colors.SelectedBackground).Foreground(colors.SelectedText)
 	}
 	title := labelStyle.Render("File Content:")
 	return title + "\n" + m.previewViewport.View()
