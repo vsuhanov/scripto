@@ -55,7 +55,7 @@ func handleCommand(container *services.Container, args []string) {
 	}
 
 	if len(args) == 0 {
-		if err := tui.RunApp(container, tui.StartAtMainList); err != nil {
+		if err := tui.RunApp(container, tui.ShowMainListRequest{}); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
 			container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
 		}
@@ -63,7 +63,7 @@ func handleCommand(container *services.Container, args []string) {
 	}
 
 	if args[0] == "add" {
-		if err := tui.RunApp(container, tui.StartAtAdd); err != nil {
+		if err := tui.RunApp(container, tui.ShowAddScreenRequest{}); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
 			container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
 		}
@@ -130,35 +130,7 @@ func parseScriptNameAndArgs(userArgs []string) (string, []string) {
 }
 
 func executeFoundScript(container *services.Container, scriptEnt *entities.Script, scriptArgs []string) error {
-	processingResult, err := container.ExecutionService.ProcessScriptArguments(scriptEnt, scriptArgs)
-	if err != nil {
-		return err
-	}
-
-	if !processingResult.NeedsPlaceholderForm {
-		finalCommand, err := container.ExecutionService.PrepareDirectExecution(processingResult)
-		if err != nil {
-			return err
-		}
-		container.TerminalService.ExecuteCommand(container.TerminalService.PrepareScriptExecution(finalCommand))
-		return nil
-	}
-
-	formResult, err := tui.RunPlaceholderForm(processingResult.Placeholders)
-	if err != nil {
-		return fmt.Errorf("failed to collect placeholder values: %w", err)
-	}
-
-	if formResult.Cancelled {
-		return fmt.Errorf("operation cancelled by user")
-	}
-
-	finalCommand, err := container.ExecutionService.PrepareExecution(scriptEnt, scriptArgs, formResult.Values)
-	if err != nil {
-		return err
-	}
-	container.TerminalService.ExecuteCommand(container.TerminalService.PrepareScriptExecution(finalCommand))
-	return nil
+	return tui.RunApp(container, tui.ExecuteScriptRequest{Script: scriptEnt, ScriptArgs: scriptArgs})
 }
 
 func handleNoMatch(container *services.Container, input string) error {

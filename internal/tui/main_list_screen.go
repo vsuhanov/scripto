@@ -404,15 +404,8 @@ func (m *MainListScreen) handleExternalEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	scriptPath := m.selectedScript.FilePath
-
-	if scriptPath == "" {
-		m.statusMsg = "Cannot edit: script has no file path"
-		return m, nil
-	}
-
 	return m, func() tea.Msg {
-		return EditScriptExternalMsg{scriptPath: scriptPath}
+		return EditScriptExternalMsg{script: m.selectedScript}
 	}
 }
 

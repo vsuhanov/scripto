@@ -10,33 +10,49 @@ import (
 	"scripto/internal/services"
 )
 
-type RootModel struct {
-	container      *services.Container
-	currentScreen  tea.Model
-	screenStack    []tea.Model
-	width          int
-	height         int
-	pendingCommand services.TerminalServiceCommand
+type TuiRequest interface {
+	tuiRequest()
 }
 
-type StartMode int
+type ShowMainListRequest struct{}
 
-const (
-	StartAtMainList StartMode = iota
-	StartAtAdd
-)
+func (ShowMainListRequest) tuiRequest() {}
+
+type ShowAddScreenRequest struct{}
+
+func (ShowAddScreenRequest) tuiRequest() {}
+
+type ExecuteScriptRequest struct {
+	Script     *entities.Script
+	ScriptArgs []string
+}
+
+func (ExecuteScriptRequest) tuiRequest() {}
+
+type RootModel struct {
+	container               *services.Container
+	currentScreen           tea.Model
+	screenStack             []tea.Model
+	width                   int
+	height                  int
+	pendingCommand          services.TerminalServiceCommand
+	initialRequest          TuiRequest
+	pendingPlaceholderScript *entities.Script
+	pendingPlaceholderAction string
+}
 
 type ExecuteAppCommandMsg struct {
 	command services.TerminalServiceCommand
 }
 
-func NewRootModel(container *services.Container, startMode StartMode) (*RootModel, error) {
+func NewRootModel(container *services.Container, request TuiRequest) (*RootModel, error) {
 	var initialScreen tea.Model
 	var err error
 
-	if startMode == StartAtAdd {
+	switch request.(type) {
+	case ShowAddScreenRequest:
 		initialScreen = NewHistoryScreen(container)
-	} else {
+	default:
 		initialScreen, err = NewMainListScreen(container)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create main list screen: %w", err)
@@ -44,19 +60,23 @@ func NewRootModel(container *services.Container, startMode StartMode) (*RootMode
 	}
 
 	return &RootModel{
-		container:     container,
-		currentScreen: initialScreen,
-		screenStack:   []tea.Model{},
-		width:         80,
-		height:        24,
+		container:      container,
+		currentScreen:  initialScreen,
+		screenStack:    []tea.Model{},
+		width:          80,
+		height:         24,
+		initialRequest: request,
 	}, nil
 }
 
 func (m RootModel) Init() tea.Cmd {
-	if model, ok := m.currentScreen.(tea.Model); ok {
-		return model.Init()
+	screenInit := m.currentScreen.Init()
+	if req, ok := m.initialRequest.(ExecuteScriptRequest); ok {
+		return tea.Batch(screenInit, func() tea.Msg {
+			return ExecuteScriptMsg{script: req.Script, scriptArgs: req.ScriptArgs}
+		})
 	}
-	return nil
+	return screenInit
 }
 
 func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -84,13 +104,40 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case ExecuteScriptMsg:
-		return m, m.handleExecuteScript(msg.script)
+		return m, m.handleExecuteScript(msg.script, msg.scriptArgs)
 
 	case CopyScriptToClipboardMsg:
 		return m, m.handleCopyScriptToClipboard(msg.script)
 
+	case ShowPlaceholderFormMsg:
+		m.pendingPlaceholderScript = msg.script
+		m.pendingPlaceholderAction = msg.action
+		form := NewPlaceholderForm(msg.placeholders)
+		m.screenStack = append(m.screenStack, m.currentScreen)
+		m.currentScreen = form
+		return m, form.Init()
+
+	case PlaceholderFormDoneMsg:
+		if len(m.screenStack) > 0 {
+			m.currentScreen = m.screenStack[len(m.screenStack)-1]
+			m.screenStack = m.screenStack[:len(m.screenStack)-1]
+		}
+		if msg.cancelled {
+			m.pendingPlaceholderScript = nil
+			m.pendingPlaceholderAction = ""
+			return m, func() tea.Msg { return StatusMsg("Cancelled") }
+		}
+		script := m.pendingPlaceholderScript
+		action := m.pendingPlaceholderAction
+		m.pendingPlaceholderScript = nil
+		m.pendingPlaceholderAction = ""
+		if action == "execute" {
+			return m, m.finalizeExecute(script, msg.values)
+		}
+		return m, m.finalizeCopy(script, msg.values)
+
 	case EditScriptExternalMsg:
-		return m, m.handleEditScriptExternal(msg.scriptPath)
+		return m, m.handleEditScriptExternal(msg.script)
 
 	case ShowScriptEditorMsg:
 		scriptEditor := NewScriptEditorScreen(msg.script, false, m.container)
@@ -147,38 +194,24 @@ func (m RootModel) View() string {
 	return ""
 }
 
-func (m *RootModel) handleExecuteScript(script *entities.Script) tea.Cmd {
+func (m *RootModel) handleExecuteScript(script *entities.Script, scriptArgs []string) tea.Cmd {
 	return func() tea.Msg {
-		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, []string{})
+		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, scriptArgs)
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
 		}
 
-		var finalCommand string
 		if !processingResult.NeedsPlaceholderForm {
-			finalCommand, err = m.container.ExecutionService.PrepareDirectExecution(processingResult)
+			finalCommand, err := m.container.ExecutionService.PrepareDirectExecution(processingResult)
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
 			}
-		} else {
-			formResult, err := RunPlaceholderForm(processingResult.Placeholders)
-			if err != nil {
-				return ErrorMsg(fmt.Errorf("failed to collect placeholder values: %w", err))
-			}
-
-			if formResult.Cancelled {
-				return ErrorMsg(fmt.Errorf("operation cancelled by user"))
-			}
-
-			finalCommand, err = m.container.ExecutionService.PrepareExecution(script, []string{}, formResult.Values)
-			if err != nil {
-				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
+			return ExecuteAppCommandMsg{
+				command: m.container.TerminalService.PrepareScriptExecution(finalCommand),
 			}
 		}
 
-		return ExecuteAppCommandMsg{
-			command: m.container.TerminalService.PrepareScriptExecution(finalCommand),
-		}
+		return ShowPlaceholderFormMsg{script: script, action: "execute", placeholders: processingResult.Placeholders}
 	}
 }
 
@@ -189,39 +222,48 @@ func (m *RootModel) handleCopyScriptToClipboard(script *entities.Script) tea.Cmd
 			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
 		}
 
-		var finalCommand string
 		if !processingResult.NeedsPlaceholderForm {
-			finalCommand, err = m.container.ExecutionService.PrepareDirectExecution(processingResult)
+			finalCommand, err := m.container.ExecutionService.PrepareDirectExecution(processingResult)
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare command: %w", err))
 			}
-		} else {
-			formResult, err := RunPlaceholderForm(processingResult.Placeholders)
-			if err != nil {
-				return ErrorMsg(fmt.Errorf("failed to collect placeholder values: %w", err))
-			}
-			if formResult.Cancelled {
-				return StatusMsg("Copy cancelled")
-			}
-			finalCommand, err = m.container.ExecutionService.PrepareExecution(script, []string{}, formResult.Values)
-			if err != nil {
-				return ErrorMsg(fmt.Errorf("failed to prepare command: %w", err))
-			}
+			_ = clipboard.WriteAll(finalCommand)
+			return StatusMsg("Copied to clipboard")
 		}
 
+		return ShowPlaceholderFormMsg{script: script, action: "copy", placeholders: processingResult.Placeholders}
+	}
+}
+
+func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]string) tea.Cmd {
+	return func() tea.Msg {
+		finalCommand, err := m.container.ExecutionService.PrepareExecution(script, []string{}, values)
+		if err != nil {
+			return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
+		}
+		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand)}
+	}
+}
+
+func (m *RootModel) finalizeCopy(script *entities.Script, values map[string]string) tea.Cmd {
+	return func() tea.Msg {
+		finalCommand, err := m.container.ExecutionService.PrepareExecution(script, []string{}, values)
+		if err != nil {
+			return ErrorMsg(fmt.Errorf("failed to prepare command: %w", err))
+		}
 		_ = clipboard.WriteAll(finalCommand)
 		return StatusMsg("Copied to clipboard")
 	}
 }
 
-func (m *RootModel) handleEditScriptExternal(scriptPath string) tea.Cmd {
+func (m *RootModel) handleEditScriptExternal(script *entities.Script) tea.Cmd {
 	return func() tea.Msg {
-		if scriptPath == "" {
+		if script.FilePath == "" {
 			return ErrorMsg(fmt.Errorf("no script path provided for external edit"))
 		}
 
 		return ExecuteAppCommandMsg{
-			command: m.container.TerminalService.PrepareExternalEditing(scriptPath),
+			command: m.container.TerminalService.PrepareExternalEditing(script.FilePath),
 		}
 	}
 }

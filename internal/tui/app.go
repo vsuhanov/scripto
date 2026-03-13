@@ -7,8 +7,8 @@ import (
 	"scripto/internal/services"
 )
 
-func RunApp(container *services.Container, mode StartMode) error {
-	rootModel, err := NewRootModel(container, mode)
+func RunApp(container *services.Container, request TuiRequest) error {
+	rootModel, err := NewRootModel(container, request)
 	if err != nil {
 		return err
 	}

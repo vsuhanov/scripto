@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"scripto/entities"
+	"scripto/internal/args"
 )
 
 const (
@@ -32,7 +33,8 @@ type ExitAppMsg struct {
 }
 
 type ExecuteScriptMsg struct {
-	script *entities.Script
+	script     *entities.Script
+	scriptArgs []string
 }
 
 type SaveScriptMsg struct {
@@ -42,7 +44,7 @@ type SaveScriptMsg struct {
 }
 
 type EditScriptExternalMsg struct {
-	scriptPath string
+	script *entities.Script
 }
 
 type DeleteScriptMsg struct {
@@ -60,6 +62,17 @@ type ShowScriptEditorMsg struct {
 }
 
 type ShowHistoryScreenMsg struct{}
+
+type ShowPlaceholderFormMsg struct {
+	script       *entities.Script
+	action       string
+	placeholders []args.PlaceholderValue
+}
+
+type PlaceholderFormDoneMsg struct {
+	values    map[string]string
+	cancelled bool
+}
 
 type ScriptEditorResult struct {
 	Script    *entities.Script
