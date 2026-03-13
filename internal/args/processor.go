@@ -14,6 +14,7 @@ import (
 type PlaceholderValue struct {
 	Name         string
 	Description  string
+	Descriptions []string
 	DefaultValue string
 	Value        string
 	Provided     bool
@@ -186,53 +187,71 @@ func (p *ArgumentProcessor) parseProvidedArguments(args []string) ProvidedArgume
 	return result
 }
 
+func (p *ArgumentProcessor) getDemarcators() (string, string) {
+	start := p.script.PlaceholderStartDemarcator
+	end := p.script.PlaceholderEndDemarcator
+	if start == "" {
+		start = "%"
+	}
+	if end == "" {
+		end = "%"
+	}
+	return start, end
+}
+
+func (p *ArgumentProcessor) buildPlaceholderRegex() *regexp.Regexp {
+	start, end := p.getDemarcators()
+	if start == "%" && end == "%" {
+		return regexp.MustCompile(`%%|%([^:%\n]*):?([^:%\n]*):?([^%\n]*)%`)
+	}
+	escapedStart := regexp.QuoteMeta(start)
+	escapedEnd := regexp.QuoteMeta(end)
+	endChar := regexp.QuoteMeta(string(end[0]))
+	pattern := escapedStart + `([^:` + endChar + `\n]*):?([^:` + endChar + `\n]*):?([^` + endChar + `\n]*)` + escapedEnd
+	return regexp.MustCompile(pattern)
+}
+
 // extractPlaceholderInfo extracts placeholder information from the script command
 func (p *ArgumentProcessor) extractPlaceholderInfo() (map[string]PlaceholderValue, error) {
 	placeholders := make(map[string]PlaceholderValue)
 	positionalCounter := 0
 
-	// Regex to match various placeholder formats:
-	// %name:description:default% or %name::default% or %name:description:% or %:description:default% or %::default% or %%
-	re := regexp.MustCompile(`%%|%([^:%]*):?([^:%]*):?([^%]*)%`)
+	re := p.buildPlaceholderRegex()
 	command, err := p.getCommandContent()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	matches := re.FindAllStringSubmatch(command, -1)
 
 	for _, match := range matches {
-		// Check if this is the simple %% case
 		if match[0] == "%%" {
 			positionalCounter++
 			name := fmt.Sprintf("arg%d", positionalCounter)
-			
-			// Skip if already processed (avoid duplicates)
+
 			if _, exists := placeholders[name]; exists {
 				continue
 			}
-			
+
 			placeholders[name] = PlaceholderValue{
 				Name:         name,
-				Description:  "",
+				Descriptions: []string{},
 				DefaultValue: "",
 				Provided:     false,
 				IsPositional: true,
 			}
 		} else if len(match) >= 4 {
 			rawName := match[1]
-			rawDescription := match[2] 
+			rawDescription := match[2]
 			rawDefault := match[3]
-			
-			// Handle escaped colons
+
 			description := strings.ReplaceAll(rawDescription, "\\:", ":")
 			defaultValue := strings.ReplaceAll(rawDefault, "\\:", ":")
-			
+
 			var name string
 			var isPositional bool
-			
+
 			if rawName == "" {
-				// Positional placeholder
 				positionalCounter++
 				name = fmt.Sprintf("arg%d", positionalCounter)
 				isPositional = true
@@ -240,15 +259,28 @@ func (p *ArgumentProcessor) extractPlaceholderInfo() (map[string]PlaceholderValu
 				name = rawName
 				isPositional = false
 			}
-			
-			// Skip if already processed (avoid duplicates)
-			if _, exists := placeholders[name]; exists {
+
+			if existing, exists := placeholders[name]; exists {
+				if description != "" {
+					alreadyPresent := false
+					for _, d := range existing.Descriptions {
+						if d == description {
+							alreadyPresent = true
+							break
+						}
+					}
+					if !alreadyPresent {
+						existing.Descriptions = append(existing.Descriptions, description)
+						placeholders[name] = existing
+					}
+				}
 				continue
 			}
-			
+
 			placeholders[name] = PlaceholderValue{
 				Name:         name,
 				Description:  description,
+				Descriptions: []string{description},
 				DefaultValue: defaultValue,
 				Provided:     false,
 				IsPositional: isPositional,
@@ -268,7 +300,7 @@ func (p *ArgumentProcessor) GetPlaceholderOrder() []string {
 func (p *ArgumentProcessor) getPlaceholderOrder() []string {
 	var order []string
 
-	re := regexp.MustCompile(`%%|%([^:%]*):?([^:%]*):?([^%]*)%`)
+	re := p.buildPlaceholderRegex()
 	command, err := p.getCommandContent()
 	if err != nil {
 		return nil // Return empty slice on error
@@ -314,8 +346,7 @@ func (p *ArgumentProcessor) substitutePlaceholders(placeholders map[string]Place
 		return "" // Return empty string on error
 	}
 
-	// Get all placeholder matches to replace them in order
-	re := regexp.MustCompile(`%%|%([^:%]*):?([^:%]*):?([^%]*)%`)
+	re := p.buildPlaceholderRegex()
 	matches := re.FindAllStringSubmatch(command, -1)
 	
 	positionalCounter := 0

@@ -115,13 +115,19 @@ func (m PlaceholderFormModel) View() string {
 		}
 
 		b.WriteString(FieldLabelStyle.Render(label))
+		b.WriteString("\n")
 
-		if placeholder.Description != "" {
+		if len(placeholder.Descriptions) > 1 {
+			for i, desc := range placeholder.Descriptions {
+				b.WriteString(" ")
+				b.WriteString(DescriptionStyle.Render(fmt.Sprintf("%d. %s", i+1, desc)))
+				b.WriteString("\n")
+			}
+		} else if placeholder.Description != "" {
 			b.WriteString(" ")
 			b.WriteString(DescriptionStyle.Render(fmt.Sprintf("(%s)", placeholder.Description)))
+			b.WriteString("\n")
 		}
-
-		b.WriteString("\n")
 
 		inputStyle := PlaceholderInputStyle
 		if i == m.focused && m.buttonFocus == 0 {
