@@ -206,7 +206,7 @@ func (p *ArgumentProcessor) buildPlaceholderRegex() *regexp.Regexp {
 	}
 	escapedStart := regexp.QuoteMeta(start)
 	escapedEnd := regexp.QuoteMeta(end)
-	endChar := regexp.QuoteMeta(string(end[0]))
+	endChar := regexp.QuoteMeta(string([]rune(end)[0]))
 	pattern := escapedStart + `([^:` + endChar + `\n]*):?([^:` + endChar + `\n]*):?([^` + endChar + `\n]*)` + escapedEnd
 	return regexp.MustCompile(pattern)
 }
@@ -395,10 +395,9 @@ func (p *ArgumentProcessor) substitutePlaceholders(placeholders map[string]Place
 		replacements[match[0]] = value
 	}
 	
-	// Apply all replacements
 	result := command
 	for placeholder, value := range replacements {
-		result = strings.Replace(result, placeholder, value, 1)
+		result = strings.ReplaceAll(result, placeholder, value)
 	}
 
 	return result
