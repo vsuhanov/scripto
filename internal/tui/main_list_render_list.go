@@ -6,13 +6,16 @@ import (
 	"scripto/internal/utils"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 	totalVerticalBorder := 2
 	totalHorizontalBorder := 2
 	maxListItemWidth := maxWidth - totalHorizontalBorder
-	if len(m.scripts) == 0 {
+	scripts := m.activeScripts()
+	if len(scripts) == 0 {
 		emptyMsg := "No scripts found.\nUse 'scripto add' to create some scripts."
 		return ListStyle.
 			Width(maxWidth).
@@ -27,13 +30,16 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 	var items []string
 	var currentScope string
 
-	for i, script := range m.scripts {
+	for i, script := range scripts {
 		if script.Scope != currentScope {
-			if currentScope != "" {
+			scopeType := getScopeType(script.Scope)
+			var header string
+			if scopeType == "other" {
+				header = formatOtherScopeHeader(script.Scope)
+			} else {
+				header = formatScopeHeader(script.Scope)
 			}
-
-			scopeHeader := formatScopeHeader(script.Scope)
-			items = append(items, scopeHeader)
+			items = append(items, header)
 			currentScope = script.Scope
 		}
 
@@ -47,7 +53,7 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 
 	var start, end int
 	if len(items) > maxPossibleContentHeight {
-		selectedLine := findSelectedLine(items, m.selectedItemIndex, m.scripts)
+		selectedLine := findSelectedLine(items, m.selectedItemIndex, scripts)
 		start, end = calculateScrollWindow(selectedLine, len(items), maxPossibleContentHeight)
 		items = items[start:end]
 		content = strings.Join(items, "\n")
@@ -168,6 +174,10 @@ func findSelectedLine(lines []string, selectedItemIndex int, scripts []*entities
 	}
 
 	return estimatedLine
+}
+
+func formatOtherScopeHeader(scope string) string {
+	return lipgloss.NewStyle().Foreground(mutedTextColor).Bold(true).Render("◌ " + formatDirectoryName(scope))
 }
 
 func formatDirectoryName(dir string) string {

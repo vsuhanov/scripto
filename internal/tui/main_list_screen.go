@@ -33,6 +33,7 @@ const (
 
 type MainListScreen struct {
 	scripts           []*entities.Script
+	allScripts        []*entities.Script
 	selectedItemIndex int
 	selectedScript    *entities.Script
 	config            storage.Config
@@ -57,8 +58,9 @@ type MainListScreen struct {
 	quitting      bool
 	pendingGKey   bool
 
-	sortMode    int
-	scriptStats map[string]services.ScriptStats
+	sortMode      int
+	scriptStats   map[string]services.ScriptStats
+	showAllScopes bool
 
 	previewViewport       viewport.Model
 	previewViewportReady  bool
@@ -79,6 +81,13 @@ func NewMainListScreen(container *services.Container) (*MainListScreen, error) {
 	}, nil
 }
 
+func (m *MainListScreen) activeScripts() []*entities.Script {
+	if m.showAllScopes {
+		return m.allScripts
+	}
+	return m.scripts
+}
+
 func (m *MainListScreen) SetStatusMessage(msg string) {
 	m.statusMsg = msg
 }
@@ -88,8 +97,9 @@ func (m *MainListScreen) RefreshScripts() {
 }
 
 func (m *MainListScreen) updateSelectedScript() {
-	if m.selectedItemIndex >= 0 && m.selectedItemIndex < len(m.scripts) {
-		m.selectedScript = m.scripts[m.selectedItemIndex]
+	scripts := m.activeScripts()
+	if m.selectedItemIndex >= 0 && m.selectedItemIndex < len(scripts) {
+		m.selectedScript = scripts[m.selectedItemIndex]
 		m.updatePreviewViewportContent()
 	} else {
 		m.selectedScript = nil
@@ -105,8 +115,9 @@ func (m *MainListScreen) Init() tea.Cmd {
 }
 
 type scriptsWithStatsMsg struct {
-	scripts []*entities.Script
-	stats   map[string]services.ScriptStats
+	scripts    []*entities.Script
+	allScripts []*entities.Script
+	stats      map[string]services.ScriptStats
 }
 
 func (m *MainListScreen) loadScripts() tea.Cmd {
@@ -114,6 +125,11 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 		scripts, err := m.container.ScriptService.FindAllScripts()
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))
+		}
+
+		allScripts, err := m.container.ScriptService.FindAllScopesScripts()
+		if err != nil {
+			allScripts = scripts
 		}
 
 		var stats map[string]services.ScriptStats
@@ -124,22 +140,13 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 			stats = map[string]services.ScriptStats{}
 		}
 
-		return scriptsWithStatsMsg{scripts: scripts, stats: stats}
+		return scriptsWithStatsMsg{scripts: scripts, allScripts: allScripts, stats: stats}
 	}
 }
 
 func (m *MainListScreen) sortScripts() {
 	if m.sortMode == sortDefault {
 		return
-	}
-
-	scopeOrder := []string{}
-	scopeMap := map[string][]*entities.Script{}
-	for _, s := range m.scripts {
-		if _, exists := scopeMap[s.Scope]; !exists {
-			scopeOrder = append(scopeOrder, s.Scope)
-		}
-		scopeMap[s.Scope] = append(scopeMap[s.Scope], s)
 	}
 
 	less := func(i, j *entities.Script) bool {
@@ -158,18 +165,30 @@ func (m *MainListScreen) sortScripts() {
 		return false
 	}
 
-	for scope := range scopeMap {
-		group := scopeMap[scope]
-		sort.SliceStable(group, func(i, j int) bool {
-			return less(group[i], group[j])
-		})
+	sortList := func(list []*entities.Script) []*entities.Script {
+		scopeOrder := []string{}
+		scopeMap := map[string][]*entities.Script{}
+		for _, s := range list {
+			if _, exists := scopeMap[s.Scope]; !exists {
+				scopeOrder = append(scopeOrder, s.Scope)
+			}
+			scopeMap[s.Scope] = append(scopeMap[s.Scope], s)
+		}
+		for scope := range scopeMap {
+			group := scopeMap[scope]
+			sort.SliceStable(group, func(i, j int) bool {
+				return less(group[i], group[j])
+			})
+		}
+		result := make([]*entities.Script, 0, len(list))
+		for _, scope := range scopeOrder {
+			result = append(result, scopeMap[scope]...)
+		}
+		return result
 	}
 
-	result := make([]*entities.Script, 0, len(m.scripts))
-	for _, scope := range scopeOrder {
-		result = append(result, scopeMap[scope]...)
-	}
-	m.scripts = result
+	m.scripts = sortList(m.scripts)
+	m.allScripts = sortList(m.allScripts)
 }
 
 func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -204,8 +223,9 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ScriptsLoadedMsg:
 		m.scripts = []*entities.Script(msg)
+		m.allScripts = m.scripts
 		m.ready = true
-		if len(m.scripts) > 0 && m.selectedItemIndex >= len(m.scripts) {
+		if len(m.activeScripts()) > 0 && m.selectedItemIndex >= len(m.activeScripts()) {
 			m.selectedItemIndex = 0
 		}
 		m.sortScripts()
@@ -214,9 +234,10 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case scriptsWithStatsMsg:
 		m.scripts = msg.scripts
+		m.allScripts = msg.allScripts
 		m.scriptStats = msg.stats
 		m.ready = true
-		if len(m.scripts) > 0 && m.selectedItemIndex >= len(m.scripts) {
+		if len(m.activeScripts()) > 0 && m.selectedItemIndex >= len(m.activeScripts()) {
 			m.selectedItemIndex = 0
 		}
 		m.sortScripts()
@@ -402,7 +423,7 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return ShowExecutionHistoryMsg{}
 			}
 		case "g":
-			if m.focusedPane == "list" && len(m.scripts) > 0 {
+			if m.focusedPane == "list" && len(m.activeScripts()) > 0 {
 				m.selectedItemIndex = 0
 				m.updateSelectedScript()
 			}
@@ -453,15 +474,15 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleImmediateDelete()
 
 	case "j", "down":
-		if m.focusedPane == "list" && len(m.scripts) > 0 {
-			m.selectedItemIndex = min(m.selectedItemIndex+1, len(m.scripts)-1)
+		if m.focusedPane == "list" && len(m.activeScripts()) > 0 {
+			m.selectedItemIndex = (m.selectedItemIndex + 1) % len(m.activeScripts())
 			m.updateSelectedScript()
 			return m, nil
 		}
 
 	case "k", "up":
-		if m.focusedPane == "list" && len(m.scripts) > 0 {
-			m.selectedItemIndex = max(0, m.selectedItemIndex-1)
+		if m.focusedPane == "list" && len(m.activeScripts()) > 0 {
+			m.selectedItemIndex = (m.selectedItemIndex - 1 + len(m.activeScripts())) % len(m.activeScripts())
 			m.updateSelectedScript()
 			return m, nil
 		}
@@ -471,11 +492,24 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "G":
-		if m.focusedPane == "list" && len(m.scripts) > 0 {
-			m.selectedItemIndex = len(m.scripts) - 1
+		if m.focusedPane == "list" && len(m.activeScripts()) > 0 {
+			m.selectedItemIndex = len(m.activeScripts()) - 1
 			m.updateSelectedScript()
 			return m, nil
 		}
+
+	case "S":
+		m.showAllScopes = !m.showAllScopes
+		if m.selectedItemIndex >= len(m.activeScripts()) {
+			m.selectedItemIndex = 0
+		}
+		m.updateSelectedScript()
+		if m.showAllScopes {
+			m.statusMsg = "Showing all scopes"
+		} else {
+			m.statusMsg = "Showing current scopes only"
+		}
+		return m, nil
 
 	case "o":
 		m.sortMode = (m.sortMode + 1) % sortModeCount
@@ -528,7 +562,7 @@ func (m *MainListScreen) handleExternalEdit() (tea.Model, tea.Cmd) {
 }
 
 func (m *MainListScreen) handleDeleteRequest() (tea.Model, tea.Cmd) {
-	if len(m.scripts) > 0 {
+	if len(m.activeScripts()) > 0 {
 		m.confirmDelete = true
 		m.statusMsg = "Delete script? (y/n)"
 	}
@@ -646,6 +680,7 @@ Actions:
   y            Copy command to clipboard
 
 Other:
+  S            Toggle all scopes visibility
   ?            Toggle this help
   q, Ctrl+C    Quit
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"scripto/entities"
@@ -290,6 +291,35 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 	}
 
 	return results, nil
+}
+
+func (s *ScriptService) FindAllScopesScripts() ([]*entities.Script, error) {
+	mainScripts, err := s.FindAllScripts()
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]bool)
+	for _, script := range mainScripts {
+		seen[script.Scope] = true
+	}
+
+	var extra []*entities.Script
+	for scope, scripts := range s.config {
+		if seen[scope] {
+			continue
+		}
+		for _, scriptEnt := range scripts {
+			scriptEnt.Scope = scope
+			extra = append(extra, scriptEnt)
+		}
+	}
+
+	sort.Slice(extra, func(i, j int) bool {
+		return extra[i].Scope < extra[j].Scope
+	})
+
+	return append(mainScripts, extra...), nil
 }
 
 func (s *ScriptService) Match(input string) (*entities.Script, error) {
