@@ -129,24 +129,47 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 }
 
 func (m *MainListScreen) sortScripts() {
-	switch m.sortMode {
-	case sortLastExecution:
-		sort.SliceStable(m.scripts, func(i, j int) bool {
-			si := m.scriptStats[m.scripts[i].ID]
-			sj := m.scriptStats[m.scripts[j].ID]
+	if m.sortMode == sortDefault {
+		return
+	}
+
+	scopeOrder := []string{}
+	scopeMap := map[string][]*entities.Script{}
+	for _, s := range m.scripts {
+		if _, exists := scopeMap[s.Scope]; !exists {
+			scopeOrder = append(scopeOrder, s.Scope)
+		}
+		scopeMap[s.Scope] = append(scopeMap[s.Scope], s)
+	}
+
+	less := func(i, j *entities.Script) bool {
+		switch m.sortMode {
+		case sortLastExecution:
+			si := m.scriptStats[i.ID]
+			sj := m.scriptStats[j.ID]
 			return si.LastExecutionTime.After(sj.LastExecutionTime)
-		})
-	case sortFrequency:
-		sort.SliceStable(m.scripts, func(i, j int) bool {
-			si := m.scriptStats[m.scripts[i].ID]
-			sj := m.scriptStats[m.scripts[j].ID]
+		case sortFrequency:
+			si := m.scriptStats[i.ID]
+			sj := m.scriptStats[j.ID]
 			return si.ExecutionCount > sj.ExecutionCount
-		})
-	case sortAlphabetic:
-		sort.SliceStable(m.scripts, func(i, j int) bool {
-			return m.scripts[i].Name < m.scripts[j].Name
+		case sortAlphabetic:
+			return i.Name < j.Name
+		}
+		return false
+	}
+
+	for scope := range scopeMap {
+		group := scopeMap[scope]
+		sort.SliceStable(group, func(i, j int) bool {
+			return less(group[i], group[j])
 		})
 	}
+
+	result := make([]*entities.Script, 0, len(m.scripts))
+	for _, scope := range scopeOrder {
+		result = append(result, scopeMap[scope]...)
+	}
+	m.scripts = result
 }
 
 func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
