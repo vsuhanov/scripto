@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	"scripto/entities"
 )
 
@@ -55,6 +56,14 @@ func ReadConfig(path string) (Config, error) {
 
 
 func WriteConfig(path string, config Config) error {
+	for _, scripts := range config {
+		for _, script := range scripts {
+			if script.ID == "" {
+				script.ID = uuid.New().String()
+			}
+		}
+	}
+
 	data, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err

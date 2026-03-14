@@ -8,6 +8,7 @@ import (
 
 	"scripto/entities"
 	"scripto/internal/services"
+	"scripto/internal/storage"
 	"scripto/internal/tui"
 )
 
@@ -28,6 +29,14 @@ func main() {
 
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
 		fmt.Printf("scripto version %s\n", version)
+		return
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "--migrate" {
+		if err := runMigrate(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -75,6 +84,22 @@ func handleCommand(container *services.Container, args []string) {
 		container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
 		return
 	}
+}
+
+func runMigrate() error {
+	configPath, err := storage.GetConfigPath()
+	if err != nil {
+		return fmt.Errorf("failed to get config path: %w", err)
+	}
+	config, err := storage.ReadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+	if err := storage.WriteConfig(configPath, config); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	fmt.Println("Migration complete")
+	return nil
 }
 
 func handleInstall(container *services.Container) error {

@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,13 +37,16 @@ type RootModel struct {
 	width                   int
 	height                  int
 	pendingCommand          services.TerminalServiceCommand
+	pendingHistoryRecord    *services.ExecutionRecord
 	initialRequest          TuiRequest
 	pendingPlaceholderScript *entities.Script
 	pendingPlaceholderAction string
+	pendingPlaceholderOriginalScript string
 }
 
 type ExecuteAppCommandMsg struct {
-	command services.TerminalServiceCommand
+	command       services.TerminalServiceCommand
+	historyRecord *services.ExecutionRecord
 }
 
 func NewRootModel(container *services.Container, request TuiRequest) (*RootModel, error) {
@@ -101,6 +105,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ExecuteAppCommandMsg:
 		m.pendingCommand = msg.command
+		m.pendingHistoryRecord = msg.historyRecord
 		return m, tea.Quit
 
 	case ExecuteScriptMsg:
@@ -112,6 +117,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ShowPlaceholderFormMsg:
 		m.pendingPlaceholderScript = msg.script
 		m.pendingPlaceholderAction = msg.action
+		m.pendingPlaceholderOriginalScript = msg.originalScript
 		form := NewPlaceholderForm(msg.script, msg.placeholders, m.width, m.height)
 		m.screenStack = append(m.screenStack, m.currentScreen)
 		m.currentScreen = form
@@ -125,14 +131,17 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.cancelled {
 			m.pendingPlaceholderScript = nil
 			m.pendingPlaceholderAction = ""
+			m.pendingPlaceholderOriginalScript = ""
 			return m, func() tea.Msg { return StatusMsg("Cancelled") }
 		}
 		script := m.pendingPlaceholderScript
 		action := m.pendingPlaceholderAction
+		originalScript := m.pendingPlaceholderOriginalScript
 		m.pendingPlaceholderScript = nil
 		m.pendingPlaceholderAction = ""
+		m.pendingPlaceholderOriginalScript = ""
 		if action == "execute" {
-			return m, m.finalizeExecute(script, msg.values)
+			return m, m.finalizeExecute(script, msg.values, originalScript)
 		}
 		return m, m.finalizeCopy(script, msg.values)
 
@@ -160,6 +169,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.screenStack = append(m.screenStack, m.currentScreen)
 		m.currentScreen = historyScreen
 		return m, historyScreen.Init()
+
+	case ShowExecutionHistoryMsg:
+		execHistoryScreen := NewExecutionHistoryScreen(m.container, msg.scriptID, m.width, m.height)
+		m.screenStack = append(m.screenStack, m.currentScreen)
+		m.currentScreen = execHistoryScreen
+		return m, execHistoryScreen.Init()
 
 	case NavigateBackMsg:
 		if len(m.screenStack) > 0 {
@@ -203,22 +218,27 @@ func (m RootModel) View() string {
 
 func (m *RootModel) handleExecuteScript(script *entities.Script, scriptArgs []string) tea.Cmd {
 	return func() tea.Msg {
+		log.Printf("handleExecuteScript: scriptID=%q scriptName=%q", script.ID, script.Name)
 		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, scriptArgs)
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
 		}
 
+		log.Printf("handleExecuteScript: NeedsPlaceholderForm=%v", processingResult.NeedsPlaceholderForm)
 		if !processingResult.NeedsPlaceholderForm {
 			finalCommand, err := m.container.ExecutionService.PrepareDirectExecution(processingResult)
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
 			}
+			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, nil)
+			log.Printf("handleExecuteScript: historyRecord=%v", record != nil)
 			return ExecuteAppCommandMsg{
-				command: m.container.TerminalService.PrepareScriptExecution(finalCommand),
+				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand),
+				historyRecord: record,
 			}
 		}
 
-		return ShowPlaceholderFormMsg{script: script, action: "execute", placeholders: processingResult.Placeholders}
+		return ShowPlaceholderFormMsg{script: script, action: "execute", placeholders: processingResult.Placeholders, originalScript: processingResult.OriginalScript}
 	}
 }
 
@@ -242,13 +262,14 @@ func (m *RootModel) handleCopyScriptToClipboard(script *entities.Script) tea.Cmd
 	}
 }
 
-func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]string) tea.Cmd {
+func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]string, originalScript string) tea.Cmd {
 	return func() tea.Msg {
 		finalCommand, err := m.container.ExecutionService.PrepareExecution(script, []string{}, values)
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
 		}
-		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand)}
+		record := m.buildHistoryRecord(script, finalCommand, originalScript, values)
+		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand), historyRecord: record}
 	}
 }
 
@@ -287,4 +308,23 @@ func (m *RootModel) handleSaveScript(script *entities.Script, command string, or
 
 func (m *RootModel) GetPendingCommand() services.TerminalServiceCommand {
 	return m.pendingCommand
+}
+
+func (m *RootModel) GetPendingHistoryRecord() *services.ExecutionRecord {
+	return m.pendingHistoryRecord
+}
+
+func (m *RootModel) buildHistoryRecord(script *entities.Script, executedScript, originalScript string, placeholderValues map[string]string) *services.ExecutionRecord {
+	log.Printf("buildHistoryRecord: scriptID=%q scriptName=%q executedScript=%q", script.ID, script.Name, executedScript)
+	if script.ID == "" {
+		log.Printf("buildHistoryRecord: script.ID is empty, skipping history record (run --migrate to assign IDs)")
+		return nil
+	}
+	cwd, _ := os.Getwd()
+	if placeholderValues == nil {
+		placeholderValues = map[string]string{}
+	}
+	record := services.BuildExecutionRecord(script, executedScript, originalScript, placeholderValues, cwd)
+	log.Printf("buildHistoryRecord: built record id=%q scriptID=%q", record.ID, record.ScriptID)
+	return &record
 }

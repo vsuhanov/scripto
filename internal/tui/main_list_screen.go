@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 
 	"github.com/atotto/clipboard"
@@ -20,6 +21,14 @@ const (
 	previewFocusDirectory
 	previewFocusViewport
 	previewFocusCount
+)
+
+const (
+	sortDefault = iota
+	sortLastExecution
+	sortFrequency
+	sortAlphabetic
+	sortModeCount
 )
 
 type MainListScreen struct {
@@ -46,10 +55,14 @@ type MainListScreen struct {
 	confirmDelete bool
 	statusMsg     string
 	quitting      bool
+	pendingGKey   bool
 
-	previewViewport      viewport.Model
-	previewViewportReady bool
-	previewNavMode       bool
+	sortMode    int
+	scriptStats map[string]services.ScriptStats
+
+	previewViewport       viewport.Model
+	previewViewportReady  bool
+	previewNavMode        bool
 	previewFocusedElement int
 }
 
@@ -91,6 +104,11 @@ func (m *MainListScreen) Init() tea.Cmd {
 	)
 }
 
+type scriptsWithStatsMsg struct {
+	scripts []*entities.Script
+	stats   map[string]services.ScriptStats
+}
+
 func (m *MainListScreen) loadScripts() tea.Cmd {
 	return func() tea.Msg {
 		scripts, err := m.container.ScriptService.FindAllScripts()
@@ -98,7 +116,36 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))
 		}
 
-		return ScriptsLoadedMsg(scripts)
+		var stats map[string]services.ScriptStats
+		if m.container.ExecutionHistoryService != nil {
+			stats, _ = m.container.ExecutionHistoryService.GetAllScriptStats()
+		}
+		if stats == nil {
+			stats = map[string]services.ScriptStats{}
+		}
+
+		return scriptsWithStatsMsg{scripts: scripts, stats: stats}
+	}
+}
+
+func (m *MainListScreen) sortScripts() {
+	switch m.sortMode {
+	case sortLastExecution:
+		sort.SliceStable(m.scripts, func(i, j int) bool {
+			si := m.scriptStats[m.scripts[i].ID]
+			sj := m.scriptStats[m.scripts[j].ID]
+			return si.LastExecutionTime.After(sj.LastExecutionTime)
+		})
+	case sortFrequency:
+		sort.SliceStable(m.scripts, func(i, j int) bool {
+			si := m.scriptStats[m.scripts[i].ID]
+			sj := m.scriptStats[m.scripts[j].ID]
+			return si.ExecutionCount > sj.ExecutionCount
+		})
+	case sortAlphabetic:
+		sort.SliceStable(m.scripts, func(i, j int) bool {
+			return m.scripts[i].Name < m.scripts[j].Name
+		})
 	}
 }
 
@@ -138,6 +185,18 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(m.scripts) > 0 && m.selectedItemIndex >= len(m.scripts) {
 			m.selectedItemIndex = 0
 		}
+		m.sortScripts()
+		m.updateSelectedScript()
+		return m, nil
+
+	case scriptsWithStatsMsg:
+		m.scripts = msg.scripts
+		m.scriptStats = msg.stats
+		m.ready = true
+		if len(m.scripts) > 0 && m.selectedItemIndex >= len(m.scripts) {
+			m.selectedItemIndex = 0
+		}
+		m.sortScripts()
 		m.updateSelectedScript()
 		return m, nil
 
@@ -304,6 +363,31 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.pendingGKey {
+		m.pendingGKey = false
+		switch msg.String() {
+		case "h":
+			if m.selectedScript != nil {
+				scriptID := m.selectedScript.ID
+				return m, func() tea.Msg {
+					return ShowExecutionHistoryMsg{scriptID: scriptID}
+				}
+			}
+			return m, nil
+		case "H":
+			return m, func() tea.Msg {
+				return ShowExecutionHistoryMsg{}
+			}
+		case "g":
+			if m.focusedPane == "list" && len(m.scripts) > 0 {
+				m.selectedItemIndex = 0
+				m.updateSelectedScript()
+			}
+			return m, nil
+		}
+		return m, nil
+	}
+
 	if m.previewNavMode {
 		return m.handlePreviewNavKeys(msg)
 	}
@@ -360,11 +444,8 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "g":
-		if m.focusedPane == "list" && len(m.scripts) > 0 {
-			m.selectedItemIndex = 0
-			m.updateSelectedScript()
-			return m, nil
-		}
+		m.pendingGKey = true
+		return m, nil
 
 	case "G":
 		if m.focusedPane == "list" && len(m.scripts) > 0 {
@@ -372,6 +453,20 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateSelectedScript()
 			return m, nil
 		}
+
+	case "o":
+		m.sortMode = (m.sortMode + 1) % sortModeCount
+		m.sortScripts()
+		m.updateSelectedScript()
+		m.statusMsg = sortModeName(m.sortMode)
+		return m, nil
+
+	case "O":
+		m.sortMode = (m.sortMode - 1 + sortModeCount) % sortModeCount
+		m.sortScripts()
+		m.updateSelectedScript()
+		m.statusMsg = sortModeName(m.sortMode)
+		return m, nil
 
 	case "y":
 		if m.focusedPane == "list" && m.selectedScript != nil {
@@ -534,4 +629,18 @@ Other:
 Press ? or Esc to close this help.`
 
 	return HelpScreenStyle.Width(m.width).Height(m.height).Render(helpText)
+}
+
+func sortModeName(mode int) string {
+	switch mode {
+	case sortDefault:
+		return "Sort: default"
+	case sortLastExecution:
+		return "Sort: last execution"
+	case sortFrequency:
+		return "Sort: frequency"
+	case sortAlphabetic:
+		return "Sort: alphabetic"
+	}
+	return ""
 }

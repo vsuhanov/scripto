@@ -5,6 +5,7 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -102,6 +103,14 @@ func (m *MainListScreen) formatPreviewMetadata(selected *entities.Script) string
 	if selected.FilePath != "" {
 		filename := filepath.Base(selected.FilePath)
 		metadata = append(metadata, fmt.Sprintf("File: %s", filename))
+	}
+
+	if selected.ID != "" && m.scriptStats != nil {
+		if stats, ok := m.scriptStats[selected.ID]; ok && stats.ExecutionCount > 0 {
+			lastRun := stats.LastExecutionTime.Format(time.RFC822)
+			metadata = append(metadata, fmt.Sprintf("Last run: %s", lastRun))
+			metadata = append(metadata, fmt.Sprintf("Runs: %d", stats.ExecutionCount))
+		}
 	}
 
 	return PreviewContentStyle.Render(strings.Join(metadata, "\n"))

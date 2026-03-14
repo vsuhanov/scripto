@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"scripto/entities"
 	"scripto/internal/args"
+	"scripto/internal/services"
 )
 
 const (
@@ -67,10 +68,19 @@ type HistoryCommandSelectedMsg struct {
 	command string
 }
 
+type ShowExecutionHistoryMsg struct {
+	scriptID string
+}
+
+type PendingExecutionHistoryRecord struct {
+	record services.ExecutionRecord
+}
+
 type ShowPlaceholderFormMsg struct {
-	script       *entities.Script
-	action       string
-	placeholders []args.PlaceholderValue
+	script         *entities.Script
+	action         string
+	placeholders   []args.PlaceholderValue
+	originalScript string
 }
 
 type PlaceholderFormDoneMsg struct {

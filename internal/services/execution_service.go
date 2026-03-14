@@ -12,6 +12,7 @@ type ArgumentProcessingResult struct {
 	NeedsPlaceholderForm bool
 	Placeholders         []args.PlaceholderValue
 	FinalCommand         string
+	OriginalScript       string
 }
 
 type ExecutionService struct{}
@@ -44,6 +45,7 @@ func (es *ExecutionService) ProcessScriptArguments(s *entities.Script, scriptArg
 		return &ArgumentProcessingResult{
 			NeedsPlaceholderForm: false,
 			FinalCommand:         finalCommand,
+			OriginalScript:       contentStr,
 		}, nil
 	}
 
@@ -64,6 +66,7 @@ func (es *ExecutionService) ProcessScriptArguments(s *entities.Script, scriptArg
 		return &ArgumentProcessingResult{
 			NeedsPlaceholderForm: false,
 			FinalCommand:         result.FinalCommand,
+			OriginalScript:       contentStr,
 		}, nil
 	}
 
@@ -91,6 +94,7 @@ func (es *ExecutionService) ProcessScriptArguments(s *entities.Script, scriptArg
 	return &ArgumentProcessingResult{
 		NeedsPlaceholderForm: true,
 		Placeholders:         allPlaceholders,
+		OriginalScript:       contentStr,
 	}, nil
 }
 
