@@ -123,6 +123,28 @@ func (s *ExecutionHistoryService) GetExecutionCount(scriptID string) (int, error
 	return count, nil
 }
 
+func (s *ExecutionHistoryService) GetFrecencyScores() map[string]float64 {
+	rows, err := s.db.Query(`SELECT script_id, execution_timestamp FROM execution_history`)
+	if err != nil {
+		return map[string]float64{}
+	}
+	defer rows.Close()
+
+	const halfLife = 168.0
+	now := time.Now()
+	scores := map[string]float64{}
+	for rows.Next() {
+		var scriptID string
+		var ts int64
+		if err := rows.Scan(&scriptID, &ts); err != nil {
+			continue
+		}
+		hoursSince := now.Sub(time.Unix(ts, 0)).Hours()
+		scores[scriptID] += 1.0 / (1.0 + hoursSince/halfLife)
+	}
+	return scores
+}
+
 func (s *ExecutionHistoryService) GetAllScriptStats() (map[string]ScriptStats, error) {
 	rows, err := s.db.Query(
 		`SELECT script_id, MAX(execution_timestamp), COUNT(*) FROM execution_history GROUP BY script_id`,

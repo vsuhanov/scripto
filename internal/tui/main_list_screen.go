@@ -58,9 +58,10 @@ type MainListScreen struct {
 	quitting      bool
 	pendingGKey   bool
 
-	sortMode      int
-	scriptStats   map[string]services.ScriptStats
-	showAllScopes bool
+	sortMode       int
+	scriptStats    map[string]services.ScriptStats
+	frecencyScores map[string]float64
+	showAllScopes  bool
 
 	previewViewport       viewport.Model
 	previewViewportReady  bool
@@ -115,9 +116,10 @@ func (m *MainListScreen) Init() tea.Cmd {
 }
 
 type scriptsWithStatsMsg struct {
-	scripts    []*entities.Script
-	allScripts []*entities.Script
-	stats      map[string]services.ScriptStats
+	scripts        []*entities.Script
+	allScripts     []*entities.Script
+	stats          map[string]services.ScriptStats
+	frecencyScores map[string]float64
 }
 
 func (m *MainListScreen) loadScripts() tea.Cmd {
@@ -133,24 +135,27 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 		}
 
 		var stats map[string]services.ScriptStats
+		var frecencyScores map[string]float64
 		if m.container.ExecutionHistoryService != nil {
 			stats, _ = m.container.ExecutionHistoryService.GetAllScriptStats()
+			frecencyScores = m.container.ExecutionHistoryService.GetFrecencyScores()
 		}
 		if stats == nil {
 			stats = map[string]services.ScriptStats{}
 		}
+		if frecencyScores == nil {
+			frecencyScores = map[string]float64{}
+		}
 
-		return scriptsWithStatsMsg{scripts: scripts, allScripts: allScripts, stats: stats}
+		return scriptsWithStatsMsg{scripts: scripts, allScripts: allScripts, stats: stats, frecencyScores: frecencyScores}
 	}
 }
 
 func (m *MainListScreen) sortScripts() {
-	if m.sortMode == sortDefault {
-		return
-	}
-
 	less := func(i, j *entities.Script) bool {
 		switch m.sortMode {
+		case sortDefault:
+			return m.frecencyScores[i.ID] > m.frecencyScores[j.ID]
 		case sortLastExecution:
 			si := m.scriptStats[i.ID]
 			sj := m.scriptStats[j.ID]
@@ -236,6 +241,7 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scripts = msg.scripts
 		m.allScripts = msg.allScripts
 		m.scriptStats = msg.stats
+		m.frecencyScores = msg.frecencyScores
 		m.ready = true
 		if len(m.activeScripts()) > 0 && m.selectedItemIndex >= len(m.activeScripts()) {
 			m.selectedItemIndex = 0
