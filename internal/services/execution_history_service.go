@@ -30,6 +30,7 @@ type ExecutionRecord struct {
 	ExecutedScriptHash     string
 	OriginalScriptHash     string
 	ScriptName             string
+	ScriptScope            string
 }
 
 type ExecutionHistoryService struct {
@@ -227,10 +228,12 @@ func scanExecutionRecords(rows *sql.Rows) ([]ExecutionRecord, error) {
 			r.PlaceholderValues = map[string]string{}
 		}
 		var scriptObj struct {
-			Name string `json:"name"`
+			Name  string `json:"name"`
+			Scope string `json:"scope"`
 		}
 		if err := json.Unmarshal([]byte(r.ScriptObjectDefinition), &scriptObj); err == nil {
 			r.ScriptName = scriptObj.Name
+			r.ScriptScope = scriptObj.Scope
 		}
 		records = append(records, r)
 	}

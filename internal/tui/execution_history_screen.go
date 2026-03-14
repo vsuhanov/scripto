@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -42,12 +43,22 @@ func NewExecutionHistoryScreen(container *services.Container, scriptID string, w
 		height:    height,
 	}
 	if width > 0 && height > 0 {
-		vpWidth := width/2 - 4
-		vpHeight := max(1, height-8)
-		s.detailVP = viewport.New(vpWidth, vpHeight)
+		tableH, vpH := s.calcHeights(height)
+		_ = tableH
+		s.detailVP = viewport.New(width-4, max(1, vpH))
 		s.detailReady = true
 	}
 	return s
+}
+
+func (s *ExecutionHistoryScreen) calcHeights(height int) (tableHeight, vpHeight int) {
+	available := height - 6
+	tableHeight = available / 2
+	vpHeight = available - tableHeight - 4
+	if vpHeight < 1 {
+		vpHeight = 1
+	}
+	return
 }
 
 func (s *ExecutionHistoryScreen) Init() tea.Cmd {
@@ -78,14 +89,13 @@ func (s *ExecutionHistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		s.width = msg.Width
 		s.height = msg.Height
-		vpHeight := max(1, s.height-8)
-		vpWidth := s.width/2 - 4
+		_, vpH := s.calcHeights(s.height)
 		if !s.detailReady {
-			s.detailVP = viewport.New(vpWidth, vpHeight)
+			s.detailVP = viewport.New(s.width-4, max(1, vpH))
 			s.detailReady = true
 		} else {
-			s.detailVP.Width = vpWidth
-			s.detailVP.Height = vpHeight
+			s.detailVP.Width = s.width - 4
+			s.detailVP.Height = max(1, vpH)
 		}
 		s.updateDetailContent()
 		return s, nil
@@ -146,11 +156,11 @@ func (s *ExecutionHistoryScreen) reExecute(record services.ExecutionRecord) tea.
 	return func() tea.Msg {
 		cwd, _ := os.Getwd()
 		newRecord := services.ExecutionRecord{
-			ScriptID:              record.ScriptID,
-			ExecutedScript:        record.ExecutedScript,
-			OriginalScript:        record.OriginalScript,
-			PlaceholderValues:     record.PlaceholderValues,
-			WorkingDirectory:      cwd,
+			ScriptID:               record.ScriptID,
+			ExecutedScript:         record.ExecutedScript,
+			OriginalScript:         record.OriginalScript,
+			PlaceholderValues:      record.PlaceholderValues,
+			WorkingDirectory:       cwd,
 			ScriptObjectDefinition: record.ScriptObjectDefinition,
 		}
 		return ExecuteAppCommandMsg{
@@ -166,7 +176,6 @@ func (s *ExecutionHistoryScreen) updateDetailContent() {
 	}
 	r := s.records[s.selected]
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Script ID: %s\n", r.ScriptID))
 	sb.WriteString(fmt.Sprintf("Working Dir: %s\n\n", r.WorkingDirectory))
 	sb.WriteString("Command:\n")
 	sb.WriteString(r.ExecutedScript)
@@ -178,6 +187,13 @@ func (s *ExecutionHistoryScreen) updateDetailContent() {
 	}
 	s.detailVP.SetContent(sb.String())
 	s.detailVP.GotoTop()
+}
+
+func scopeDisplay(scope string) string {
+	if scope == "" || scope == "global" {
+		return "global"
+	}
+	return filepath.Base(scope)
 }
 
 func (s *ExecutionHistoryScreen) View() string {
@@ -200,36 +216,36 @@ func (s *ExecutionHistoryScreen) View() string {
 	}
 
 	const tsWidth = 16
-	const nameWidth = 16
-	halfWidth := s.width / 2
-	cmdWidth := max(0, halfWidth-2-tsWidth-nameWidth-4)
+	const scopeWidth = 16
+	nameWidth := max(0, s.width-4-tsWidth-scopeWidth-4)
+
+	tableHeight, _ := s.calcHeights(s.height)
 
 	listLines := make([]string, len(s.records))
 	for i, r := range s.records {
 		ts := time.Unix(r.ExecutionTimestamp, 0).Format("2006-01-02 15:04")
+		scope := scopeDisplay(r.ScriptScope)
+		if len(scope) > scopeWidth {
+			scope = scope[:scopeWidth-1] + "…"
+		}
 		name := r.ScriptName
 		if len(name) > nameWidth {
-			name = name[:nameWidth-1] + "…"
+			name = name[:max(0, nameWidth-1)] + "…"
 		}
-		cmd := r.ExecutedScript
-		if len(cmd) > cmdWidth {
-			cmd = cmd[:max(0, cmdWidth-1)] + "…"
-		}
-		line := fmt.Sprintf("%-*s  %-*s  %s", tsWidth, ts, nameWidth, name, cmd)
+		line := fmt.Sprintf("%-*s  %-*s  %s", tsWidth, ts, scopeWidth, scope, name)
 		if i == s.selected {
-			listLines[i] = ListItemSelectedStyle.Width(halfWidth - 2).Render(line)
+			listLines[i] = ListItemSelectedStyle.Width(s.width - 4).Render(line)
 		} else {
-			listLines[i] = ListItemStyle.Width(halfWidth - 2).Render(line)
+			listLines[i] = ListItemStyle.Width(s.width - 4).Render(line)
 		}
 	}
 
 	listContent := strings.Join(listLines, "\n")
-	listPane := ListStyle.Width(halfWidth - 2).Height(s.height - 6).Render(listContent)
+	tablePane := ListStyle.Width(s.width - 2).Height(tableHeight).Render(listContent)
 
-	detailPane := PreviewStyle.Width(halfWidth - 2).Height(s.height - 6).Render(s.detailVP.View())
+	detailPane := PreviewStyle.Width(s.width - 2).Render(s.detailVP.View())
 
-	body := lipgloss.JoinHorizontal(lipgloss.Top, listPane, detailPane)
 	footer := HelpStyle.Render("j/k: navigate • enter: re-execute • q/esc: back")
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	return lipgloss.JoinVertical(lipgloss.Left, header, tablePane, detailPane, footer)
 }
