@@ -76,11 +76,23 @@ type PendingExecutionHistoryRecord struct {
 	record services.ExecutionRecord
 }
 
+type ShowScopeSelectionMsg struct {
+	script     *entities.Script
+	scriptArgs []string
+}
+
+type ScopeSelectionResultMsg struct {
+	script       *entities.Script
+	scriptArgs   []string
+	useScriptDir bool
+}
+
 type ShowPlaceholderFormMsg struct {
 	script         *entities.Script
 	action         string
 	placeholders   []args.PlaceholderValue
 	originalScript string
+	useScriptDir   bool
 }
 
 type PlaceholderFormDoneMsg struct {
