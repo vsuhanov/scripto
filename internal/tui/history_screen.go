@@ -124,7 +124,7 @@ func (h *HistoryScreen) View() string { // tea.Model
 	}
 
 	popupWidth := min(80, h.width-8)
-	popupHeight := min(30, h.height-4)
+	popupHeight := min(30, h.height-8)
 
 	var content string
 
