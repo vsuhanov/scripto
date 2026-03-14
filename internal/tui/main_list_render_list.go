@@ -27,24 +27,26 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 	// 	Height(height).
 	// 	Render(lipgloss.NewStyle().Foreground(lipgloss.Color("#ff9900")).Bold(false).Render("mytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nytext \n my text \n"))
 
+	listItems := m.buildListItems()
 	var items []string
-	var currentScope string
 
-	for i, script := range scripts {
-		if script.Scope != currentScope {
-			scopeType := getScopeType(script.Scope)
+	for i, item := range listItems {
+		if item.script == nil {
 			var header string
-			if scopeType == "other" {
-				header = formatOtherScopeHeader(script.Scope)
+			if i == m.selectedItemIndex && item.isSelectableHeader() {
+				header = ListItemSelectedStyle.Width(maxListItemWidth - 4).Render(scopeHeaderRawText(item.scope))
 			} else {
-				header = formatScopeHeader(script.Scope)
+				scopeType := getScopeType(item.scope)
+				if scopeType == "other" {
+					header = formatOtherScopeHeader(item.scope)
+				} else {
+					header = formatScopeHeader(item.scope)
+				}
 			}
 			items = append(items, header)
-			currentScope = script.Scope
+		} else {
+			items = append(items, m.formatScriptItem(*item.script, i, maxListItemWidth, 3))
 		}
-
-		item := m.formatScriptItem(*script, i, maxListItemWidth, 3)
-		items = append(items, item)
 	}
 
 	content := strings.Join(items, "\n")
@@ -53,8 +55,7 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 
 	var start, end int
 	if len(items) > maxPossibleContentHeight {
-		selectedLine := findSelectedLine(items, m.selectedItemIndex, scripts)
-		start, end = calculateScrollWindow(selectedLine, len(items), maxPossibleContentHeight)
+		start, end = calculateScrollWindow(m.selectedItemIndex, len(items), maxPossibleContentHeight)
 		items = items[start:end]
 		content = strings.Join(items, "\n")
 	}
@@ -159,21 +160,18 @@ func calculateScrollWindow(selectedLine, totalLines, visibleHeight int) (int, in
 	return start, end
 }
 
-// TODO: this feels extremely unreliable, better to keep some structures with scopes
-func findSelectedLine(lines []string, selectedItemIndex int, scripts []*entities.Script) int {
-	scopeHeaders := 0
-	for i := 0; i <= selectedItemIndex && i < len(scripts); i++ {
-		if i == 0 || scripts[i].Scope != scripts[i-1].Scope {
-			scopeHeaders++
-		}
+func scopeHeaderRawText(scope string) string {
+	scopeType := getScopeType(scope)
+	switch scopeType {
+	case "local":
+		return "● " + formatDirectoryName(scope)
+	case "parent":
+		return "◐ " + formatDirectoryName(scope)
+	case "other":
+		return "◌ " + formatDirectoryName(scope)
+	default:
+		return formatDirectoryName(scope)
 	}
-
-	estimatedLine := selectedItemIndex + scopeHeaders
-	if estimatedLine >= len(lines) {
-		estimatedLine = len(lines) - 1
-	}
-
-	return estimatedLine
 }
 
 func formatOtherScopeHeader(scope string) string {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
@@ -170,6 +171,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.finalizeCopy(script, msg.values)
 
+	case DeleteScriptMsg:
+		return m, m.handleDeleteScript(msg.script)
+
 	case EditScriptExternalMsg:
 		return m, m.handleEditScriptExternal(msg.script)
 
@@ -212,6 +216,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pendingCommand = m.container.TerminalService.PrepareExit(ExitBuiltinComplete)
 		return m, tea.Quit
+
+	case CdToDirectoryMsg:
+		dir := msg.dir
+		return m, func() tea.Msg {
+			return ExecuteAppCommandMsg{
+				command: m.container.TerminalService.PrepareScriptExecution("cd " + shellQuote(dir)),
+			}
+		}
 
 	case RefreshScriptsMsg:
 		if mainList, ok := m.currentScreen.(*MainListScreen); ok {
@@ -319,6 +331,15 @@ func (m *RootModel) finalizeCopy(script *entities.Script, values map[string]stri
 	}
 }
 
+func (m *RootModel) handleDeleteScript(script *entities.Script) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.container.ScriptService.DeleteScript(script); err != nil {
+			return ErrorMsg(fmt.Errorf("error deleting script: %w", err))
+		}
+		return ScriptDeletedMsg{script: script}
+	}
+}
+
 func (m *RootModel) handleEditScriptExternal(script *entities.Script) tea.Cmd {
 	return func() tea.Msg {
 		if script.FilePath == "" {
@@ -339,6 +360,10 @@ func (m *RootModel) handleSaveScript(script *entities.Script, command string, or
 
 		return NavigateBackMsg{}
 	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func (m *RootModel) GetPendingCommand() services.TerminalServiceCommand {

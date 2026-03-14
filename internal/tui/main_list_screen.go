@@ -89,6 +89,29 @@ func (m *MainListScreen) activeScripts() []*entities.Script {
 	return m.scripts
 }
 
+type listItem struct {
+	script *entities.Script
+	scope  string
+}
+
+func (li listItem) isSelectableHeader() bool {
+	return li.script == nil && li.scope != "global"
+}
+
+func (m *MainListScreen) buildListItems() []listItem {
+	scripts := m.activeScripts()
+	var items []listItem
+	var currentScope string
+	for _, s := range scripts {
+		if s.Scope != currentScope {
+			items = append(items, listItem{scope: s.Scope})
+			currentScope = s.Scope
+		}
+		items = append(items, listItem{script: s})
+	}
+	return items
+}
+
 func (m *MainListScreen) SetStatusMessage(msg string) {
 	m.statusMsg = msg
 }
@@ -98,9 +121,9 @@ func (m *MainListScreen) RefreshScripts() {
 }
 
 func (m *MainListScreen) updateSelectedScript() {
-	scripts := m.activeScripts()
-	if m.selectedItemIndex >= 0 && m.selectedItemIndex < len(scripts) {
-		m.selectedScript = scripts[m.selectedItemIndex]
+	items := m.buildListItems()
+	if m.selectedItemIndex >= 0 && m.selectedItemIndex < len(items) {
+		m.selectedScript = items[m.selectedItemIndex].script
 		m.updatePreviewViewportContent()
 	} else {
 		m.selectedScript = nil
@@ -230,7 +253,7 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scripts = []*entities.Script(msg)
 		m.allScripts = m.scripts
 		m.ready = true
-		if len(m.activeScripts()) > 0 && m.selectedItemIndex >= len(m.activeScripts()) {
+		if len(m.buildListItems()) > 0 && m.selectedItemIndex >= len(m.buildListItems()) {
 			m.selectedItemIndex = 0
 		}
 		m.sortScripts()
@@ -243,11 +266,23 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scriptStats = msg.stats
 		m.frecencyScores = msg.frecencyScores
 		m.ready = true
-		if len(m.activeScripts()) > 0 && m.selectedItemIndex >= len(m.activeScripts()) {
+		if len(m.buildListItems()) > 0 && m.selectedItemIndex >= len(m.buildListItems()) {
 			m.selectedItemIndex = 0
 		}
 		m.sortScripts()
 		m.updateSelectedScript()
+		return m, nil
+
+	case ScriptDeletedMsg:
+		m.scripts = removeScript(m.scripts, msg.script)
+		m.allScripts = removeScript(m.allScripts, msg.script)
+		if m.selectedItemIndex >= len(m.buildListItems()) && m.selectedItemIndex > 0 {
+			m.selectedItemIndex--
+		}
+		m.selectedScript = nil
+		m.previewViewport.SetContent("")
+		m.updateSelectedScript()
+		m.statusMsg = "Script deleted"
 		return m, nil
 
 	case ErrorMsg:
@@ -429,9 +464,15 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return ShowExecutionHistoryMsg{}
 			}
 		case "g":
-			if m.focusedPane == "list" && len(m.activeScripts()) > 0 {
-				m.selectedItemIndex = 0
-				m.updateSelectedScript()
+			if m.focusedPane == "list" {
+				items := m.buildListItems()
+				if len(items) > 0 {
+					m.selectedItemIndex = 0
+					if items[0].script == nil && items[0].scope == "global" && len(items) > 1 {
+						m.selectedItemIndex = 1
+					}
+					m.updateSelectedScript()
+				}
 			}
 			return m, nil
 		}
@@ -461,9 +502,15 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.previewFocusedElement = m.firstFocusablePreviewElement()
 			return m, nil
 		}
-		if m.selectedScript != nil {
-			return m, func() tea.Msg {
-				return ExecuteScriptMsg{script: m.selectedScript}
+		items := m.buildListItems()
+		if m.selectedItemIndex < len(items) {
+			item := items[m.selectedItemIndex]
+			if item.isSelectableHeader() {
+				dir := item.scope
+				return m, func() tea.Msg { return CdToDirectoryMsg{dir: dir} }
+			} else if item.script != nil {
+				script := item.script
+				return m, func() tea.Msg { return ExecuteScriptMsg{script: script} }
 			}
 		}
 
@@ -480,16 +527,28 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleImmediateDelete()
 
 	case "j", "down":
-		if m.focusedPane == "list" && len(m.activeScripts()) > 0 {
-			m.selectedItemIndex = (m.selectedItemIndex + 1) % len(m.activeScripts())
-			m.updateSelectedScript()
+		if m.focusedPane == "list" {
+			items := m.buildListItems()
+			if len(items) > 0 {
+				m.selectedItemIndex = (m.selectedItemIndex + 1) % len(items)
+				if items[m.selectedItemIndex].script == nil && items[m.selectedItemIndex].scope == "global" {
+					m.selectedItemIndex = (m.selectedItemIndex + 1) % len(items)
+				}
+				m.updateSelectedScript()
+			}
 			return m, nil
 		}
 
 	case "k", "up":
-		if m.focusedPane == "list" && len(m.activeScripts()) > 0 {
-			m.selectedItemIndex = (m.selectedItemIndex - 1 + len(m.activeScripts())) % len(m.activeScripts())
-			m.updateSelectedScript()
+		if m.focusedPane == "list" {
+			items := m.buildListItems()
+			if len(items) > 0 {
+				m.selectedItemIndex = (m.selectedItemIndex - 1 + len(items)) % len(items)
+				if items[m.selectedItemIndex].script == nil && items[m.selectedItemIndex].scope == "global" {
+					m.selectedItemIndex = (m.selectedItemIndex - 1 + len(items)) % len(items)
+				}
+				m.updateSelectedScript()
+			}
 			return m, nil
 		}
 
@@ -498,15 +557,21 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "G":
-		if m.focusedPane == "list" && len(m.activeScripts()) > 0 {
-			m.selectedItemIndex = len(m.activeScripts()) - 1
-			m.updateSelectedScript()
+		if m.focusedPane == "list" {
+			items := m.buildListItems()
+			if len(items) > 0 {
+				m.selectedItemIndex = len(items) - 1
+				if items[m.selectedItemIndex].script == nil && items[m.selectedItemIndex].scope == "global" && m.selectedItemIndex > 0 {
+					m.selectedItemIndex--
+				}
+				m.updateSelectedScript()
+			}
 			return m, nil
 		}
 
 	case "S":
 		m.showAllScopes = !m.showAllScopes
-		if m.selectedItemIndex >= len(m.activeScripts()) {
+		if m.selectedItemIndex >= len(m.buildListItems()) {
 			m.selectedItemIndex = 0
 		}
 		m.updateSelectedScript()
@@ -567,8 +632,18 @@ func (m *MainListScreen) handleExternalEdit() (tea.Model, tea.Cmd) {
 	}
 }
 
+func removeScript(list []*entities.Script, target *entities.Script) []*entities.Script {
+	result := make([]*entities.Script, 0, len(list))
+	for _, s := range list {
+		if s != target {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
 func (m *MainListScreen) handleDeleteRequest() (tea.Model, tea.Cmd) {
-	if len(m.activeScripts()) > 0 {
+	if m.selectedScript != nil {
 		m.confirmDelete = true
 		m.statusMsg = "Delete script? (y/n)"
 	}

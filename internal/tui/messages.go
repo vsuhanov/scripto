@@ -52,11 +52,19 @@ type DeleteScriptMsg struct {
 	script *entities.Script
 }
 
+type ScriptDeletedMsg struct {
+	script *entities.Script
+}
+
 type CopyScriptToClipboardMsg struct {
 	script *entities.Script
 }
 
 type RefreshScriptsMsg struct{}
+
+type CdToDirectoryMsg struct {
+	dir string
+}
 
 type ShowScriptEditorMsg struct {
 	script *entities.Script

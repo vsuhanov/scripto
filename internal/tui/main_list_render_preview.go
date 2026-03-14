@@ -38,6 +38,9 @@ func (m *MainListScreen) renderPreview(maxWidth, maxHeight int) string {
 }
 
 func (m *MainListScreen) formatPreviewContent(script *entities.Script) string {
+	if script == nil {
+		return ""
+	}
 	var sections []string
 
 	title := m.formatPreviewTitle(script)
