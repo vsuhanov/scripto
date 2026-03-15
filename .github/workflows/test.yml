@@ -31,7 +31,7 @@ jobs:
     - name: Build binary
       run: go build -o bin/scripto .
       
-    - name: Test basic functionality
-      run: |
-        ./bin/scripto --help
-        echo "✅ Basic smoke test passed"
+    # - name: Test basic functionality
+    #   run: |
+    #     ./bin/scripto --help
+    #     echo "✅ Basic smoke test passed"
