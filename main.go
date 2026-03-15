@@ -254,11 +254,27 @@ func getCompletionSuggestions(container *services.Container, showAll bool) []str
 		frecencyScores = map[string]float64{}
 	}
 
-	sort.Slice(allScripts, func(i, j int) bool {
-		return frecencyScores[allScripts[i].ID] > frecencyScores[allScripts[j].ID]
-	})
+	var scopeOrder []string
+	scopeScripts := make(map[string][]*entities.Script)
+	for _, script := range allScripts {
+		if _, exists := scopeScripts[script.Scope]; !exists {
+			scopeOrder = append(scopeOrder, script.Scope)
+		}
+		scopeScripts[script.Scope] = append(scopeScripts[script.Scope], script)
+	}
 
-	return convertScriptResultsToSuggestions(allScripts, separator)
+	for scope := range scopeScripts {
+		sort.Slice(scopeScripts[scope], func(i, j int) bool {
+			return frecencyScores[scopeScripts[scope][i].ID] > frecencyScores[scopeScripts[scope][j].ID]
+		})
+	}
+
+	var sorted []*entities.Script
+	for _, scope := range scopeOrder {
+		sorted = append(sorted, scopeScripts[scope]...)
+	}
+
+	return convertScriptResultsToSuggestions(sorted, separator)
 }
 
 func convertScriptResultsToSuggestions(results []*entities.Script, separator string) []string {

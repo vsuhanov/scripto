@@ -459,8 +459,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ```sh
 zstyle ':completion:*' menu select
-# zstyle ':completion:*:*:scripto:*' menu select interactive
-# zstyle ':completion:*:scripto:*:*' menu select interactive
 bindkey -M menuselect '^M' accept-line
 bindkey -M menuselect '^I' menu-complete
 bindkey -M menuselect '^[ ' send-break
@@ -469,6 +467,10 @@ bindkey -M menuselect '^y' vi-insert
 for c in {a..z} {A..Z} {0..9}; do
   bindkey -M menuselect "$c" send-break
 done
+bindkey -M menuselect j down-history
+bindkey -M menuselect k up-history
+bindkey -M menuselect l forward-char
+bindkey -M menuselect h backward-char
 
 zstyle ':completion:*:*:scripto:*' menu select
 zstyle ':completion:*:*:scripto:*' matcher-list 'm:{a-z}={A-Z} r:|=* l:|=*'
