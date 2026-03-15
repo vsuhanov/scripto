@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +13,9 @@ import (
 	"scripto/internal/storage"
 	"scripto/internal/tui"
 )
+
+//go:embed commands/scripts/completion.zsh
+var completionZsh string
 
 var version = "dev"
 
@@ -51,6 +55,11 @@ func main() {
 }
 
 func handleCommand(container *services.Container, args []string) {
+	if len(args) > 0 && args[0] == "completion" {
+		fmt.Print(completionZsh)
+		return
+	}
+
 	if len(args) > 0 && args[0] == "__complete" {
 		handleCompletion(container, args[1:])
 		container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(3))

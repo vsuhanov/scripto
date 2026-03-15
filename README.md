@@ -387,6 +387,25 @@ scripto  # Select docker-logs, enter container name when prompted
 - Run `scripto install` to set up completion
 - Restart your shell or source your configuration file
 
+### Shell Completion Setup
+
+To manually set up zsh completion:
+
+```zsh
+# If shell completion is not already enabled, enable it once:
+echo "autoload -U compinit; compinit" >> ~/.zshrc
+
+# Load completions for each session — choose one:
+
+# For oh-my-zsh users:
+scripto completion > ~/.oh-my-zsh/completions/_scripto
+
+# For standard installations:
+scripto completion > /usr/local/share/zsh/site-functions/_scripto
+```
+
+You will need to start a new shell for this setup to take effect.
+
 **Scripts not found:**
 - Check if you're in the correct directory for local scripts
 - Use `scripto` (TUI) to see all available scripts and their scopes
@@ -435,3 +454,23 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 🔄 Script templates and snippets
 - 🔄 Script execution history
 - 🔄 Import/export functionality
+
+# zstyle configuration
+
+```sh
+zstyle ':completion:*' menu select
+# zstyle ':completion:*:*:scripto:*' menu select interactive
+# zstyle ':completion:*:scripto:*:*' menu select interactive
+bindkey -M menuselect '^M' accept-line
+bindkey -M menuselect '^I' menu-complete
+bindkey -M menuselect '^[ ' send-break
+# bindkey -M menuselect 'a' send-break
+bindkey -M menuselect '^y' vi-insert
+for c in {a..z} {A..Z} {0..9}; do
+  bindkey -M menuselect "$c" send-break
+done
+
+zstyle ':completion:*:*:scripto:*' menu select
+zstyle ':completion:*:*:scripto:*' matcher-list 'm:{a-z}={A-Z} r:|=* l:|=*'
+zstyle ':completion:*:*:scripto:*' group-name ''
+```
