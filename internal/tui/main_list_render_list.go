@@ -3,6 +3,7 @@ package tui
 import (
 	"log"
 	"scripto/entities"
+	"scripto/internal/tui/colors"
 	"scripto/internal/utils"
 	"strings"
 	"unicode/utf8"
@@ -175,7 +176,7 @@ func scopeHeaderRawText(scope string) string {
 }
 
 func formatOtherScopeHeader(scope string) string {
-	return lipgloss.NewStyle().Foreground(mutedTextColor).Bold(true).Render("◌ " + formatDirectoryName(scope))
+	return lipgloss.NewStyle().Foreground(colors.ScopeOther).Bold(true).Render("◌ " + formatDirectoryName(scope))
 }
 
 func formatDirectoryName(dir string) string {

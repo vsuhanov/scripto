@@ -73,15 +73,15 @@ var (
 
 	// Scope indicator styles
 	ScopeLocalStyle = lipgloss.NewStyle().
-			Foreground(successColor).
+			Foreground(colors.ScopeLocal).
 			Bold(true)
 
 	ScopeParentStyle = lipgloss.NewStyle().
-				Foreground(warningColor).
+				Foreground(colors.ScopeParent).
 				Bold(true)
 
 	ScopeGlobalStyle = lipgloss.NewStyle().
-				Foreground(primaryColor).
+				Foreground(colors.ScopeGlobal).
 				Bold(true)
 
 	// Help text styles
@@ -302,6 +302,24 @@ func FormatScopeIndicator(scope string) string {
 	default:
 		return "●"
 	}
+}
+
+func GetScopeColorHex(scope string) string {
+	var c lipgloss.CompleteAdaptiveColor
+	switch getScopeType(scope) {
+	case "local":
+		c = colors.ScopeLocal
+	case "parent":
+		c = colors.ScopeParent
+	case "global":
+		c = colors.ScopeGlobal
+	default:
+		c = colors.ScopeOther
+	}
+	if lipgloss.HasDarkBackground() {
+		return string(c.Dark.TrueColor)
+	}
+	return string(c.Light.TrueColor)
 }
 
 func getScopeType(scope string) string {

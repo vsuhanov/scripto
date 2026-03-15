@@ -121,3 +121,8 @@ var DangerButtonForeground = lipgloss.CompleteAdaptiveColor{
 	Light: lipgloss.CompleteColor{TrueColor: "#ffffff", ANSI256: "15", ANSI: "7"},
 	Dark:  lipgloss.CompleteColor{TrueColor: "#ffffff", ANSI256: "15", ANSI: "7"},
 }
+
+var ScopeLocal = Success
+var ScopeParent = Warning
+var ScopeGlobal = Primary
+var ScopeOther = MutedText

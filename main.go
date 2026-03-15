@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	"scripto/entities"
@@ -193,40 +194,65 @@ func handleNoMatch(container *services.Container, input string) error {
 }
 
 func handleCompletion(container *services.Container, args []string) {
-	var toComplete string
-
-	if len(args) > 0 && args[len(args)-1] == "" {
-		toComplete = strings.Join(args[:len(args)-1], " ")
-	} else if len(args) > 0 {
-		toComplete = strings.Join(args, " ")
+	showAll := false
+	for _, arg := range args {
+		if arg == "--more" {
+			showAll = true
+			break
+		}
 	}
+	// var toComplete string
 
-	cleanToComplete := toComplete
-	if strings.HasPrefix(cleanToComplete, "\\\"") {
-		cleanToComplete = strings.TrimPrefix(cleanToComplete, "\\\"")
-	} else if strings.HasPrefix(cleanToComplete, "\"") {
-		cleanToComplete = strings.TrimPrefix(cleanToComplete, "\"")
-	}
+	// if len(args) > 0 && args[len(args)-1] == "" {
+	// 	toComplete = strings.Join(args[:len(args)-1], " ")
+	// } else if len(args) > 0 {
+	// 	toComplete = strings.Join(args, " ")
+	// }
 
-	suggestions := getCompletionSuggestions(container, cleanToComplete)
+	// cleanToComplete := toComplete
+	// if strings.HasPrefix(cleanToComplete, "\\\"") {
+	// 	cleanToComplete = strings.TrimPrefix(cleanToComplete, "\\\"")
+	// } else if strings.HasPrefix(cleanToComplete, "\"") {
+	// 	cleanToComplete = strings.TrimPrefix(cleanToComplete, "\"")
+	// }
+
+	suggestions := getCompletionSuggestions(container, showAll)
 
 	for _, suggestion := range suggestions {
 		fmt.Println(suggestion)
 	}
 }
 
-func getCompletionSuggestions(container *services.Container, toComplete string) []string {
+func getCompletionSuggestions(container *services.Container, showAll bool) []string {
 	separator := "\x1F"
 
-	allScripts, err := container.ScriptService.FindAllScripts()
+	var allScripts []*entities.Script
+	var err error
+	if showAll {
+		allScripts, err = container.ScriptService.FindAllScopesScripts()
+	} else {
+		allScripts, err = container.ScriptService.FindAllScripts()
+	}
 	if err != nil {
 		return nil
 	}
 
-	return convertScriptResultsToSuggestions(allScripts, separator, toComplete)
+	var frecencyScores map[string]float64
+	if container.ExecutionHistoryService != nil {
+		frecencyScores = container.ExecutionHistoryService.GetFrecencyScores()
+	}
+	if frecencyScores == nil {
+		frecencyScores = map[string]float64{}
+	}
+
+	sort.Slice(allScripts, func(i, j int) bool {
+		return frecencyScores[allScripts[i].ID] > frecencyScores[allScripts[j].ID]
+	})
+
+	return convertScriptResultsToSuggestions(allScripts, separator)
 }
 
-func convertScriptResultsToSuggestions(results []*entities.Script, separator string, toComplete string) []string {
+func convertScriptResultsToSuggestions(results []*entities.Script, separator string) []string {
 	var suggestions []string
 	for _, script := range results {
 		if script.Name != "" {
@@ -236,24 +262,13 @@ func convertScriptResultsToSuggestions(results []*entities.Script, separator str
 			}
 
 			name := script.Name
-			if toComplete != "" {
-				if !strings.HasPrefix(name, toComplete) {
-				}
-			}
-
-			suggestions = append(suggestions, script.Scope+separator+name+separator+description)
+			scopeColor := tui.GetScopeColorHex(script.Scope)
+			suggestions = append(suggestions, script.Scope+separator+name+separator+description+separator+scopeColor)
 		} else {
 			command := script.FilePath
 			displayCommand := command
-
-			if toComplete != "" {
-				if !strings.HasPrefix(command, toComplete) {
-				}
-
-				displayCommand = command
-			}
-
-			suggestions = append(suggestions, script.Scope+separator+displayCommand+separator+script.FilePath)
+			scopeColor := tui.GetScopeColorHex(script.Scope)
+			suggestions = append(suggestions, script.Scope+separator+displayCommand+separator+script.FilePath+separator+scopeColor)
 		}
 	}
 	return suggestions
