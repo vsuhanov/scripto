@@ -120,6 +120,16 @@ func (m *MainListScreen) RefreshScripts() {
 	m.ready = false
 }
 
+func (m *MainListScreen) firstScriptItemIndex() int {
+	items := m.buildListItems()
+	for i, item := range items {
+		if item.script != nil {
+			return i
+		}
+	}
+	return 0
+}
+
 func (m *MainListScreen) updateSelectedScript() {
 	items := m.buildListItems()
 	if m.selectedItemIndex >= 0 && m.selectedItemIndex < len(items) {
@@ -253,10 +263,10 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scripts = []*entities.Script(msg)
 		m.allScripts = m.scripts
 		m.ready = true
-		if len(m.buildListItems()) > 0 && m.selectedItemIndex >= len(m.buildListItems()) {
-			m.selectedItemIndex = 0
-		}
 		m.sortScripts()
+		if m.selectedItemIndex == 0 || m.selectedItemIndex >= len(m.buildListItems()) {
+			m.selectedItemIndex = m.firstScriptItemIndex()
+		}
 		m.updateSelectedScript()
 		return m, nil
 
@@ -266,10 +276,10 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scriptStats = msg.stats
 		m.frecencyScores = msg.frecencyScores
 		m.ready = true
-		if len(m.buildListItems()) > 0 && m.selectedItemIndex >= len(m.buildListItems()) {
-			m.selectedItemIndex = 0
-		}
 		m.sortScripts()
+		if m.selectedItemIndex == 0 || m.selectedItemIndex >= len(m.buildListItems()) {
+			m.selectedItemIndex = m.firstScriptItemIndex()
+		}
 		m.updateSelectedScript()
 		return m, nil
 
