@@ -141,7 +141,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingPlaceholderAction = msg.action
 		m.pendingPlaceholderOriginalScript = msg.originalScript
 		m.pendingPlaceholderUseScriptDir = msg.useScriptDir
-		form := NewPlaceholderForm(msg.script, msg.placeholders, m.width, m.height)
+		form := NewPlaceholderForm(msg.script, msg.placeholders, m.width, m.height, m.container, msg.originalScript)
 		m.screenStack = append(m.screenStack, m.currentScreen)
 		m.currentScreen = form
 		return m, form.Init()
