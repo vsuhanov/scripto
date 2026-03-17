@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"log"
 	"strings"
@@ -117,15 +116,14 @@ func (m PlaceholderFormModel) loadHistory() tea.Cmd {
 		if err != nil {
 			return placeholderHistoryLoadedMsg{records: nil}
 		}
-		h := sha256.Sum256([]byte(m.originalScript))
-		currentHash := fmt.Sprintf("%x", h)
 		seen := map[string]bool{}
 		filtered := records[:0]
 		for _, r := range records {
-			if r.OriginalScriptHash != currentHash {
-				continue
+			parts := make([]string, len(m.placeholders))
+			for i, p := range m.placeholders {
+				parts[i] = p.Name + "=" + r.PlaceholderValues[p.Name]
 			}
-			key := fmt.Sprintf("%v", r.PlaceholderValues)
+			key := strings.Join(parts, ",")
 			if seen[key] {
 				continue
 			}

@@ -178,6 +178,7 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			e.active = false
 			name, description, command, scope := e.GetEditorValues()
 			script := &entities.Script{
+				ID:          e.originalScript.ID,
 				Name:        name,
 				Description: description,
 				FilePath:    e.originalScript.FilePath,
