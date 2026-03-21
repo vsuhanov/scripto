@@ -103,10 +103,7 @@ var (
 	// Popup styles
 	PopupStyle = lipgloss.NewStyle().
 			Background(bgColor).
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(primaryColor).
-			Padding(1).
-			Margin(2)
+			Padding(1)
 
 	PopupTitleStyle = lipgloss.NewStyle().
 			Foreground(primaryColor).

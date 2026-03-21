@@ -2,57 +2,23 @@ package tui
 
 import (
 	"fmt"
-	"io"
+	"log"
 	"scripto/internal/services"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
-type commandItem struct {
-	command string
-}
-
-func (i commandItem) FilterValue() string { return i.command }
-
-func (i commandItem) Title() string {
-	return strings.ReplaceAll(i.command, "\n", "↵")
-}
-
-func (i commandItem) Description() string { return "" }
-
-type historyListItemCustomDelegate struct{}
-
-func (d historyListItemCustomDelegate) Height() int                               { return 1 }
-func (d historyListItemCustomDelegate) Spacing() int                              { return 0 }
-func (d historyListItemCustomDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
-func (d historyListItemCustomDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(commandItem)
-	if !ok {
-		return
-	}
-
-	command := i.Title()
-	if len(command) > m.Width()-4 {
-		command = command[:m.Width()-7] + "..."
-	}
-
-	style := HistoryItemStyle
-	if index == m.Index() {
-		style = HistoryItemSelectedStyle
-	}
-
-	fmt.Fprint(w, style.Render(command))
-}
-
 type HistoryScreen struct {
-	list         list.Model
+	table        table.Model
+	commands     []string
 	active       bool
 	width        int
 	height       int
 	errorMessage string
-	container     *services.Container
+	container    *services.Container
 }
 
 type HistoryResult struct {
@@ -61,32 +27,65 @@ type HistoryResult struct {
 }
 
 type historyLoadedMsg struct {
-	items []list.Item
+	commands []string
 }
 
 func NewHistoryScreen(container *services.Container) *HistoryScreen {
 	return &HistoryScreen{
 		container: container,
-		active:   true,
-		width:    80,
-		height:   24,
+		active:    true,
+		width:     80,
+		height:    24,
 	}
 }
 
-func (h *HistoryScreen) Init() tea.Cmd { // tea.Model
-	delegate := historyListItemCustomDelegate{}
-	h.list = list.New([]list.Item{}, delegate, h.width-4, h.height-8)
-	h.list.Title = "Select Command from History"
-	h.list.SetShowStatusBar(false)
-	h.list.SetFilteringEnabled(true)
+func (h *HistoryScreen) buildTable(commands []string) table.Model {
+	popupWidth := min(80, h.width-8)
+	colWidth := popupWidth - 4
+	if colWidth < 10 {
+		colWidth = 10
+	}
 
-	return tea.Batch(
-		h.loadHistory(),
-		tea.EnterAltScreen,
+	cols := []table.Column{
+		{Title: "Command", Width: colWidth},
+	}
+
+	rows := make([]table.Row, len(commands))
+	for i, cmd := range commands {
+		rows[i] = table.Row{strings.ReplaceAll(cmd, "\n", "↵")}
+	}
+
+	tableHeight := len(commands)
+	if tableHeight > 20 {
+		tableHeight = 20
+	}
+
+	tableStyle := table.DefaultStyles()
+	tableStyle.Header = tableStyle.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(borderColor).
+		BorderBottom(true).
+		Bold(true).
+		Foreground(primaryColor)
+	tableStyle.Selected = tableStyle.Selected.
+		Foreground(selectedTextColor).
+		Background(selectedBgColor).
+		Bold(true)
+
+	return table.New(
+		table.WithColumns(cols),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(tableHeight+1),
+		table.WithStyles(tableStyle),
 	)
 }
 
-func (h *HistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) { // tea.Model
+func (h *HistoryScreen) Init() tea.Cmd {
+	return tea.Batch(h.loadHistory(), tea.EnterAltScreen)
+}
+
+func (h *HistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !h.active {
 		return h, nil
 	}
@@ -95,18 +94,20 @@ func (h *HistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) { // tea.Model
 	case tea.WindowSizeMsg:
 		h.width = msg.Width
 		h.height = msg.Height
-		h.list.SetWidth(msg.Width - 4)
-		h.list.SetHeight(msg.Height - 8)
+		if len(h.commands) > 0 {
+			h.table = h.buildTable(h.commands)
+		}
 		return h, nil
 
 	case historyLoadedMsg:
-		if len(msg.items) == 0 {
+		if len(msg.commands) == 0 {
 			h.active = false
 			return h, func() tea.Msg {
 				return NavigateBackMsg{}
 			}
 		}
-		h.list.SetItems(msg.items)
+		h.commands = msg.commands
+		h.table = h.buildTable(msg.commands)
 		return h, nil
 
 	case tea.KeyMsg:
@@ -114,11 +115,11 @@ func (h *HistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) { // tea.Model
 	}
 
 	var cmd tea.Cmd
-	h.list, cmd = h.list.Update(msg)
+	h.table, cmd = h.table.Update(msg)
 	return h, cmd
 }
 
-func (h *HistoryScreen) View() string { // tea.Model
+func (h *HistoryScreen) View() string {
 	if !h.active {
 		return ""
 	}
@@ -132,8 +133,7 @@ func (h *HistoryScreen) View() string { // tea.Model
 		errorText := ErrorStyle.Render(fmt.Sprintf("Error: %s", h.errorMessage))
 		content = errorText + "\n\nPress any key to continue with empty command..."
 	} else {
-		content = h.list.View()
-
+		content = h.table.View()
 		helpText := HelpStyle.Render("↵: select • s: skip • esc: cancel")
 		content += "\n\n" + helpText
 	}
@@ -146,18 +146,20 @@ func (h *HistoryScreen) View() string { // tea.Model
 
 func (h *HistoryScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc":
+	case "esc", "q":
 		h.active = false
 		return h, func() tea.Msg {
 			return NavigateBackMsg{}
 		}
 
 	case "enter":
-		if selectedItem := h.list.SelectedItem(); selectedItem != nil {
-			if item, ok := selectedItem.(commandItem); ok {
+		if row := h.table.SelectedRow(); row != nil {
+			cursor := h.table.Cursor()
+			if cursor < len(h.commands) {
+				command := h.commands[cursor]
 				h.active = false
 				return h, func() tea.Msg {
-					return HistoryCommandSelectedMsg{command: item.command}
+					return HistoryCommandSelectedMsg{command: command}
 				}
 			}
 		}
@@ -171,20 +173,28 @@ func (h *HistoryScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	default:
 		var cmd tea.Cmd
-		h.list, cmd = h.list.Update(msg)
+		h.table, cmd = h.table.Update(msg)
 		return h, cmd
 	}
 }
 
 func (h *HistoryScreen) loadHistory() tea.Cmd {
 	return func() tea.Msg {
-		commands := h.container.HistoryService.GetHistoryCommands()
+		allCommands := h.container.HistoryService.GetHistoryCommands()
+		log.Printf("loadHistory: total commands from service: %d", len(allCommands))
 
-		items := make([]list.Item, len(commands))
-		for i, command := range commands {
-			items[i] = commandItem{command: command}
+		commands := make([]string, 0, len(allCommands))
+		for _, command := range allCommands {
+			command = strings.TrimSpace(command)
+			if strings.HasPrefix(command, "scripto") {
+				log.Printf("loadHistory: filtering out: %q", command)
+			} else {
+				log.Printf("loadHistory: keeping: %q", command)
+				commands = append(commands, command)
+			}
 		}
 
-		return historyLoadedMsg{items: items}
+		log.Printf("loadHistory: commands after filter: %d", len(commands))
+		return historyLoadedMsg{commands: commands}
 	}
 }

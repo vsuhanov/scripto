@@ -23,7 +23,7 @@ scripto() {
         history_file=$(mktemp)
         
         # Generate command history using fc and save to file
-        fc -l -10 2>/dev/null > "$history_file" || true
+        fc -l -100 2>/dev/null > "$history_file" || true
         
         # Set environment variable for scripto to find the history file
         export SCRIPTO_SHELL_HISTORY_FILE_PATH="$history_file"
