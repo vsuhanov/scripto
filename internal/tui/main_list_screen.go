@@ -509,10 +509,34 @@ func (m *MainListScreen) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		m.searchMode = false
 		m.searchInput.Blur()
 		return m, nil
-	case "enter", "tab":
+	case "enter":
+		if m.selectedScript != nil {
+			script := m.selectedScript
+			return m, func() tea.Msg { return ExecuteScriptMsg{script: script} }
+		}
+		return m, nil
+	case "tab":
 		m.searchInput.Blur()
-		m.selectedItemIndex = m.firstScriptItemIndex()
-		m.updateSelectedScript()
+		return m, nil
+	case "ctrl+n":
+		items := m.buildListItems()
+		if len(items) > 0 {
+			m.selectedItemIndex = (m.selectedItemIndex + 1) % len(items)
+			if items[m.selectedItemIndex].script == nil && items[m.selectedItemIndex].scope == "global" {
+				m.selectedItemIndex = (m.selectedItemIndex + 1) % len(items)
+			}
+			m.updateSelectedScript()
+		}
+		return m, nil
+	case "ctrl+p":
+		items := m.buildListItems()
+		if len(items) > 0 {
+			m.selectedItemIndex = (m.selectedItemIndex - 1 + len(items)) % len(items)
+			if items[m.selectedItemIndex].script == nil && items[m.selectedItemIndex].scope == "global" {
+				m.selectedItemIndex = (m.selectedItemIndex - 1 + len(items)) % len(items)
+			}
+			m.updateSelectedScript()
+		}
 		return m, nil
 	default:
 		var cmd tea.Cmd
