@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -20,13 +21,13 @@ type ExecutionHistoryScreen struct {
 	container   *services.Container
 	scriptID    string
 	records     []services.ExecutionRecord
-	selected    int
 	filter      string
 	offset      int
 	width       int
 	height      int
 	ready       bool
 	err         error
+	table       table.Model
 	detailVP    viewport.Model
 	detailReady bool
 }
@@ -43,8 +44,7 @@ func NewExecutionHistoryScreen(container *services.Container, scriptID string, w
 		height:    height,
 	}
 	if width > 0 && height > 0 {
-		tableH, vpH := s.calcHeights(height)
-		_ = tableH
+		_, vpH := s.calcHeights(height)
 		s.detailVP = viewport.New(width-4, max(1, vpH))
 		s.detailReady = true
 	}
@@ -59,6 +59,54 @@ func (s *ExecutionHistoryScreen) calcHeights(height int) (tableHeight, vpHeight 
 		vpHeight = 1
 	}
 	return
+}
+
+func (s *ExecutionHistoryScreen) buildTable(records []services.ExecutionRecord) table.Model {
+	tableH, _ := s.calcHeights(s.height)
+
+	const tsWidth = 16
+	const scopeWidth = 16
+	nameWidth := max(10, s.width-4-tsWidth-scopeWidth-6)
+
+	cols := []table.Column{
+		{Title: "Time", Width: tsWidth},
+		{Title: "Scope", Width: scopeWidth},
+		{Title: "Name", Width: nameWidth},
+	}
+
+	rows := make([]table.Row, len(records))
+	for i, r := range records {
+		ts := time.Unix(r.ExecutionTimestamp, 0).Format("2006-01-02 15:04")
+		scope := scopeDisplay(r.ScriptScope)
+		if len(scope) > scopeWidth {
+			scope = scope[:scopeWidth-1] + "…"
+		}
+		name := r.ScriptName
+		if len(name) > nameWidth {
+			name = name[:max(0, nameWidth-1)] + "…"
+		}
+		rows[i] = table.Row{ts, scope, name}
+	}
+
+	tableStyle := table.DefaultStyles()
+	tableStyle.Header = tableStyle.Header.
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderForeground(borderColor).
+		BorderBottom(true).
+		Bold(true).
+		Foreground(primaryColor)
+	tableStyle.Selected = tableStyle.Selected.
+		Foreground(selectedTextColor).
+		Background(selectedBgColor).
+		Bold(true)
+
+	return table.New(
+		table.WithColumns(cols),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(tableH),
+		table.WithStyles(tableStyle),
+	)
 }
 
 func (s *ExecutionHistoryScreen) Init() tea.Cmd {
@@ -97,15 +145,16 @@ func (s *ExecutionHistoryScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			s.detailVP.Width = s.width - 4
 			s.detailVP.Height = max(1, vpH)
 		}
+		if s.ready {
+			s.table = s.buildTable(s.records)
+		}
 		s.updateDetailContent()
 		return s, nil
 
 	case executionHistoryLoadedMsg:
 		s.records = msg.records
 		s.ready = true
-		if s.selected >= len(s.records) {
-			s.selected = max(0, len(s.records)-1)
-		}
+		s.table = s.buildTable(s.records)
 		s.updateDetailContent()
 		return s, nil
 
@@ -128,28 +177,20 @@ func (s *ExecutionHistoryScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	case "q", "esc", "ctrl+c":
 		return s, func() tea.Msg { return NavigateBackMsg{} }
 
-	case "j", "down":
-		if s.selected < len(s.records)-1 {
-			s.selected++
-			s.updateDetailContent()
-		}
-		return s, nil
-
-	case "k", "up":
-		if s.selected > 0 {
-			s.selected--
-			s.updateDetailContent()
-		}
-		return s, nil
-
 	case "enter":
-		if s.selected < len(s.records) {
-			record := s.records[s.selected]
+		cursor := s.table.Cursor()
+		if cursor < len(s.records) {
+			record := s.records[cursor]
 			return s, s.reExecute(record)
 		}
 		return s, nil
+
+	default:
+		var cmd tea.Cmd
+		s.table, cmd = s.table.Update(msg)
+		s.updateDetailContent()
+		return s, cmd
 	}
-	return s, nil
 }
 
 func (s *ExecutionHistoryScreen) reExecute(record services.ExecutionRecord) tea.Cmd {
@@ -171,10 +212,14 @@ func (s *ExecutionHistoryScreen) reExecute(record services.ExecutionRecord) tea.
 }
 
 func (s *ExecutionHistoryScreen) updateDetailContent() {
-	if !s.detailReady || s.selected >= len(s.records) {
+	if !s.detailReady || len(s.records) == 0 {
 		return
 	}
-	r := s.records[s.selected]
+	cursor := s.table.Cursor()
+	if cursor >= len(s.records) {
+		return
+	}
+	r := s.records[cursor]
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Working Dir: %s\n\n", r.WorkingDirectory))
 	sb.WriteString("Command:\n")
@@ -215,36 +260,8 @@ func (s *ExecutionHistoryScreen) View() string {
 		return lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
 	}
 
-	const tsWidth = 16
-	const scopeWidth = 16
-	nameWidth := max(0, s.width-4-tsWidth-scopeWidth-4)
-
-	tableHeight, _ := s.calcHeights(s.height)
-
-	listLines := make([]string, len(s.records))
-	for i, r := range s.records {
-		ts := time.Unix(r.ExecutionTimestamp, 0).Format("2006-01-02 15:04")
-		scope := scopeDisplay(r.ScriptScope)
-		if len(scope) > scopeWidth {
-			scope = scope[:scopeWidth-1] + "…"
-		}
-		name := r.ScriptName
-		if len(name) > nameWidth {
-			name = name[:max(0, nameWidth-1)] + "…"
-		}
-		line := fmt.Sprintf("%-*s  %-*s  %s", tsWidth, ts, scopeWidth, scope, name)
-		if i == s.selected {
-			listLines[i] = ListItemSelectedStyle.Width(s.width - 4).Render(line)
-		} else {
-			listLines[i] = ListItemStyle.Width(s.width - 4).Render(line)
-		}
-	}
-
-	listContent := strings.Join(listLines, "\n")
-	tablePane := ListStyle.Width(s.width - 2).Height(tableHeight).Render(listContent)
-
+	tablePane := ListStyle.Width(s.width - 2).Render(s.table.View())
 	detailPane := PreviewStyle.Width(s.width - 2).Render(s.detailVP.View())
-
 	footer := HelpStyle.Render("j/k: navigate • enter: re-execute • q/esc: back")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, tablePane, detailPane, footer)
