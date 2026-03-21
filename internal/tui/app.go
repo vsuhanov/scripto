@@ -33,6 +33,9 @@ func RunApp(container *services.Container, request TuiRequest) error {
 			}
 			container.TerminalService.ExecuteCommand(cmd)
 		}
+		if saved := m.GetPendingSavedScript(); saved != nil {
+			container.TerminalService.PrintScriptSavedBox(saved.Name, saved.Scope, GetScopeColorHex(saved.Scope), m.GetPendingSavedCommand())
+		}
 	}
 
 	return nil

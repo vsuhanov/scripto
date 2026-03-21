@@ -44,6 +44,8 @@ type RootModel struct {
 	pendingPlaceholderAction         string
 	pendingPlaceholderOriginalScript string
 	pendingPlaceholderUseScriptDir   bool
+	pendingSavedScript               *entities.Script
+	pendingSavedCommand              string
 }
 
 type ExecuteAppCommandMsg struct {
@@ -185,6 +187,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case SaveScriptMsg:
 		return m, m.handleSaveScript(msg.script, msg.command, msg.original)
+
+	case ScriptSavedMsg:
+		m.pendingSavedScript = msg.script
+		m.pendingSavedCommand = msg.command
+		return m, tea.Quit
 
 	case HistoryCommandSelectedMsg:
 		script := &entities.Script{}
@@ -358,7 +365,7 @@ func (m *RootModel) handleSaveScript(script *entities.Script, command string, or
 			return ErrorMsg(fmt.Errorf("error saving script: %w", err))
 		}
 
-		return NavigateBackMsg{}
+		return ScriptSavedMsg{script: script, command: command}
 	}
 }
 
@@ -372,6 +379,14 @@ func (m *RootModel) GetPendingCommand() services.TerminalServiceCommand {
 
 func (m *RootModel) GetPendingHistoryRecord() *services.ExecutionRecord {
 	return m.pendingHistoryRecord
+}
+
+func (m *RootModel) GetPendingSavedScript() *entities.Script {
+	return m.pendingSavedScript
+}
+
+func (m *RootModel) GetPendingSavedCommand() string {
+	return m.pendingSavedCommand
 }
 
 func (m *RootModel) buildHistoryRecord(script *entities.Script, executedScript, originalScript string, placeholderValues map[string]string) *services.ExecutionRecord {

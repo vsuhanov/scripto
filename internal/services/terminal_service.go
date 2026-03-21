@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"scripto/internal/tui/colors"
 	"scripto/internal/utils"
@@ -81,6 +82,33 @@ func (ts *TerminalService) ExecuteCommand(cmd TerminalServiceCommand) {
 	case *EditScriptExternalCommand:
 		ts.editScriptExternalCommand(c.ScriptPath)
 	}
+}
+
+func (ts *TerminalService) PrintScriptSavedBox(name, scope, scopeColor, command string) {
+	width, _, err := xterm.GetSize(os.Stderr.Fd())
+	if err != nil || width <= 0 {
+		width = 80
+	}
+	titleStyle := lipgloss.NewStyle().Foreground(colors.Primary).Bold(true)
+	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"})
+	scopeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(scopeColor)).Bold(true)
+	separatorStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#9ca3af", Dark: "#4b5563"})
+	boxStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderTop(true).
+		BorderBottom(true).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderForeground(colors.Primary).
+		PaddingLeft(1).
+		Width(width - 2)
+
+	separator := strings.Repeat("─", width-4)
+	content := titleStyle.Render("Scripto command saved") + "\n" +
+		nameStyle.Render(name) + "  " + scopeStyle.Render("["+scope+"]") + "\n" +
+		separatorStyle.Render(separator) + "\n" +
+		command
+	fmt.Fprintln(os.Stderr, boxStyle.Render(content))
 }
 
 func printScriptBox(command string) {

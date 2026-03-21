@@ -44,6 +44,11 @@ type SaveScriptMsg struct {
 	original *entities.Script
 }
 
+type ScriptSavedMsg struct {
+	script  *entities.Script
+	command string
+}
+
 type EditScriptExternalMsg struct {
 	script *entities.Script
 }

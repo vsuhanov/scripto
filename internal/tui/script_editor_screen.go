@@ -19,8 +19,9 @@ type ScriptEditorScreen struct {
 	descriptionInput textinput.Model
 	commandTextarea  textarea.Model
 	scopeInput       textinput.Model
+	globalCheckbox   bool
 
-	focusedField int // 0=name, 1=description, 2=command, 3=scope, 4=save, 5=cancel
+	focusedField int
 	active       bool
 
 	originalScript *entities.Script
@@ -35,15 +36,15 @@ type ScriptEditorScreen struct {
 }
 
 const (
-	EditorScreenFieldName = iota
-	EditorScreenFieldDescription
-	EditorScreenFieldCommand
-	EditorScreenFieldScope
-	EditorScreenFieldSave
-	EditorScreenFieldCancel
-	EditorScreenFieldCount
+	EditorScreenFieldName        = 0
+	EditorScreenFieldDescription = 1
+	EditorScreenFieldCommand     = 2
+	EditorScreenFieldGlobal      = 3
+	EditorScreenFieldScope       = 4
+	EditorScreenFieldSave        = 5
+	EditorScreenFieldCancel      = 6
+	EditorScreenFieldCount       = 7
 )
-
 
 func NewScriptEditorScreen(script *entities.Script, isNewScript bool, container *services.Container) *ScriptEditorScreen {
 	return &ScriptEditorScreen{
@@ -60,7 +61,11 @@ func (e *ScriptEditorScreen) GetEditorValues() (name, description, command, scop
 	name = e.nameInput.Value()
 	description = e.descriptionInput.Value()
 	command = e.commandTextarea.Value()
-	scope = e.scopeInput.Value()
+	if e.globalCheckbox {
+		scope = "global"
+	} else {
+		scope = e.scopeInput.Value()
+	}
 	return
 }
 
@@ -90,7 +95,21 @@ func (e *ScriptEditorScreen) initializeComponents() {
 
 	e.commandTextarea = textarea.New()
 	e.commandTextarea.Placeholder = "Enter command here..."
-	
+
+	plain := lipgloss.NewStyle()
+	e.commandTextarea.FocusedStyle.Base = plain
+	e.commandTextarea.FocusedStyle.CursorLine = plain
+	e.commandTextarea.FocusedStyle.CursorLineNumber = plain.Foreground(mutedTextColor)
+	e.commandTextarea.FocusedStyle.LineNumber = plain.Foreground(mutedTextColor)
+	e.commandTextarea.FocusedStyle.Prompt = plain.Foreground(primaryColor)
+	e.commandTextarea.FocusedStyle.Text = plain
+	e.commandTextarea.BlurredStyle.Base = plain
+	e.commandTextarea.BlurredStyle.CursorLine = plain
+	e.commandTextarea.BlurredStyle.CursorLineNumber = plain.Foreground(mutedTextColor)
+	e.commandTextarea.BlurredStyle.LineNumber = plain.Foreground(mutedTextColor)
+	e.commandTextarea.BlurredStyle.Prompt = plain.Foreground(mutedTextColor)
+	e.commandTextarea.BlurredStyle.Text = plain
+
 	var commandContent string
 	if e.originalScript.FilePath != "" {
 		if content, err := os.ReadFile(e.originalScript.FilePath); err == nil {
@@ -103,20 +122,44 @@ func (e *ScriptEditorScreen) initializeComponents() {
 	e.commandTextarea.SetWidth(componentWidth)
 	e.commandTextarea.SetHeight(6)
 
+	e.globalCheckbox = e.originalScript.Scope == "global"
+
 	e.scopeInput = textinput.New()
-	e.scopeInput.Placeholder = "Directory path or 'global'"
-	e.scopeInput.SetValue(e.originalScript.Scope)
+	e.scopeInput.Placeholder = "Directory path"
 	e.scopeInput.CharLimit = 500
 	e.scopeInput.Width = componentWidth
 
-	if e.isNewScript && e.originalScript.Scope == "" {
+	if e.globalCheckbox {
 		if cwd, err := os.Getwd(); err == nil {
 			e.scopeInput.SetValue(cwd)
+		}
+	} else {
+		e.scopeInput.SetValue(e.originalScript.Scope)
+		if e.isNewScript && e.originalScript.Scope == "" {
+			if cwd, err := os.Getwd(); err == nil {
+				e.scopeInput.SetValue(cwd)
+			}
 		}
 	}
 
 	e.focusedField = EditorScreenFieldName
 	e.updateFocus()
+}
+
+func (e *ScriptEditorScreen) nextField() int {
+	next := (e.focusedField + 1) % EditorScreenFieldCount
+	if next == EditorScreenFieldScope && e.globalCheckbox {
+		next = (next + 1) % EditorScreenFieldCount
+	}
+	return next
+}
+
+func (e *ScriptEditorScreen) prevField() int {
+	prev := (e.focusedField - 1 + EditorScreenFieldCount) % EditorScreenFieldCount
+	if prev == EditorScreenFieldScope && e.globalCheckbox {
+		prev = (prev - 1 + EditorScreenFieldCount) % EditorScreenFieldCount
+	}
+	return prev
 }
 
 func (e *ScriptEditorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -128,7 +171,7 @@ func (e *ScriptEditorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		e.width = msg.Width
 		e.height = msg.Height
-		e.initializeComponents() // Reinitialize with new size
+		e.initializeComponents()
 		return e, nil
 
 	case ErrorMsg:
@@ -164,19 +207,27 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "tab":
-		e.focusedField = (e.focusedField + 1) % EditorScreenFieldCount
+		e.focusedField = e.nextField()
 		e.updateFocus()
 		return e, nil
 
 	case "shift+tab":
-		e.focusedField = (e.focusedField - 1 + EditorScreenFieldCount) % EditorScreenFieldCount
+		e.focusedField = e.prevField()
 		e.updateFocus()
 		return e, nil
 
 	case "enter":
 		if e.focusedField == EditorScreenFieldSave {
-			e.active = false
 			name, description, command, scope := e.GetEditorValues()
+			if name == "" {
+				e.errorMessage = "Name is required"
+				return e, nil
+			}
+			if scope == "" {
+				e.errorMessage = "Scope is required"
+				return e, nil
+			}
+			e.active = false
 			script := &entities.Script{
 				ID:          e.originalScript.ID,
 				Name:        name,
@@ -200,6 +251,18 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return e, func() tea.Msg {
 				return NavigateBackMsg{}
 			}
+		} else if e.focusedField == EditorScreenFieldGlobal {
+			e.globalCheckbox = !e.globalCheckbox
+			e.updateFocus()
+			return e, nil
+		}
+		fallthrough
+
+	case " ":
+		if e.focusedField == EditorScreenFieldGlobal {
+			e.globalCheckbox = !e.globalCheckbox
+			e.updateFocus()
+			return e, nil
 		}
 		fallthrough
 
@@ -233,7 +296,9 @@ func (e *ScriptEditorScreen) updateFocus() {
 	case EditorScreenFieldCommand:
 		e.commandTextarea.Focus()
 	case EditorScreenFieldScope:
-		e.scopeInput.Focus()
+		if !e.globalCheckbox {
+			e.scopeInput.Focus()
+		}
 	}
 }
 
@@ -280,7 +345,7 @@ func (e *ScriptEditorScreen) View() string {
 		cmdLabel = FieldLabelStyle.Foreground(primaryColor).Render("Command:")
 	}
 	sections = append(sections, cmdLabel)
-	
+
 	textareaView := e.commandTextarea.View()
 	if e.focusedField == EditorScreenFieldCommand {
 		textareaView = TextAreaFocusedStyle.Render(textareaView)
@@ -289,36 +354,50 @@ func (e *ScriptEditorScreen) View() string {
 	}
 	sections = append(sections, textareaView)
 
-	scopeLabel := FieldLabelStyle.Render("Scope (directory path or 'global'):")
-	if e.focusedField == EditorScreenFieldScope {
-		scopeLabel = FieldLabelStyle.Foreground(primaryColor).Render("Scope (directory path or 'global'):")
+	checkboxLabel := "☐ Global"
+	checkboxStyle := FieldLabelStyle
+	if e.globalCheckbox {
+		checkboxLabel = "☑ Global"
+		checkboxStyle = FieldLabelStyle.Foreground(primaryColor)
 	}
-	sections = append(sections, scopeLabel)
-	sections = append(sections, e.scopeInput.View())
+	if e.focusedField == EditorScreenFieldGlobal {
+		checkboxStyle = FieldLabelStyle.Foreground(primaryColor).Bold(true)
+	}
+	sections = append(sections, checkboxStyle.Render(checkboxLabel))
+
+	if !e.globalCheckbox {
+		scopeLabel := FieldLabelStyle.Render("Scope (directory path):")
+		if e.focusedField == EditorScreenFieldScope {
+			scopeLabel = FieldLabelStyle.Foreground(primaryColor).Render("Scope (directory path):")
+		}
+		sections = append(sections, scopeLabel)
+		sections = append(sections, e.scopeInput.View())
+	}
 
 	buttons := e.renderButtons(popupWidth)
 	sections = append(sections, buttons)
 
-	help := HelpStyle.Render("Tab/Shift+Tab: navigate • Enter: save • Esc: cancel")
+	help := HelpStyle.Render("Tab/Shift+Tab: navigate • Space/Enter: toggle • Esc: cancel")
 	sections = append(sections, help)
 
 	content := strings.Join(sections, "\n")
 
-	return PopupStyle.
+	return lipgloss.NewStyle().
+		Padding(1).
 		Width(popupWidth).
 		Height(popupHeight).
 		Render(content)
 }
 
 func (e *ScriptEditorScreen) renderButtons(width int) string {
-	saveStyle := FieldInputStyle
-	cancelStyle := FieldInputStyle
+	saveStyle := PrimaryButtonStyle
+	cancelStyle := DangerButtonStyle
 
 	if e.focusedField == EditorScreenFieldSave {
-		saveStyle = FieldInputFocusedStyle
+		saveStyle = PrimaryButtonFocusedStyle
 	}
 	if e.focusedField == EditorScreenFieldCancel {
-		cancelStyle = FieldInputFocusedStyle
+		cancelStyle = DangerButtonFocusedStyle
 	}
 
 	save := saveStyle.Render("Save")

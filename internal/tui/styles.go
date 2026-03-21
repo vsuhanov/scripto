@@ -134,20 +134,16 @@ var (
 				BorderForeground(colors.InputBorderFocused)
 
 	TextAreaStyle = lipgloss.NewStyle().
-			Foreground(textColor).
-			Background(colors.InputBackground).
 			Padding(1).
 			Margin(0, 0, 1, 0).
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(colors.InputBorder)
 
 	TextAreaFocusedStyle = lipgloss.NewStyle().
-				Foreground(selectedTextColor).
-				Background(primaryColor).
 				Padding(1).
 				Margin(0, 0, 1, 0).
 				BorderStyle(lipgloss.RoundedBorder()).
-				BorderForeground(colors.InputBorderFocused)
+				BorderForeground(primaryColor)
 
 	CheckboxStyle = lipgloss.NewStyle().
 			Foreground(textColor)
@@ -160,14 +156,15 @@ var (
 	PrimaryButtonStyle = lipgloss.NewStyle().
 				Padding(0, 2).
 				Margin(0, 1).
-				Background(colors.PrimaryButtonBackground).
-				Foreground(colors.PrimaryButtonForeground)
+				Background(primaryColor).
+				Foreground(colors.White)
 
 	PrimaryButtonFocusedStyle = lipgloss.NewStyle().
 					Padding(0, 2).
 					Margin(0, 1).
-					Background(colors.DangerButtonBackground).
-					Foreground(colors.PrimaryButtonForeground)
+					Background(primaryColor).
+					Foreground(colors.White).
+					Bold(true)
 
 	DangerButtonStyle = lipgloss.NewStyle().
 				Padding(0, 2).
@@ -179,7 +176,8 @@ var (
 					Padding(0, 2).
 					Margin(0, 1).
 					Background(colors.DangerButtonBackground).
-					Foreground(colors.DangerButtonForeground)
+					Foreground(colors.DangerButtonForeground).
+					Bold(true)
 
 	// Form title style
 	FormTitleStyle = lipgloss.NewStyle().
