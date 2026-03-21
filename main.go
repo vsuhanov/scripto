@@ -5,17 +5,30 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"text/template"
 
 	"scripto/entities"
 	"scripto/internal/services"
 	"scripto/internal/storage"
 	"scripto/internal/tui"
+	"scripto/internal/tui/colors"
+
+	"github.com/charmbracelet/lipgloss"
+	xterm "github.com/charmbracelet/x/term"
 )
 
 //go:embed commands/scripts/completion.zsh
 var completionZsh string
+
+//go:embed commands/scripts/scripto.zsh
+var zshFunctionContent string
+
+//go:embed commands/scripts/completion-alias.zsh
+var aliasCompletionTemplate string
 
 var version = "dev"
 
@@ -66,9 +79,9 @@ func handleCommand(container *services.Container, args []string) {
 	}
 
 	if len(args) > 0 && args[0] == "install" {
-		if err := handleInstall(container); err != nil {
+		if err := handleInstall(args[1:]); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
-			container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
+			os.Exit(1)
 		}
 		return
 	}
@@ -112,8 +125,190 @@ func runMigrate() error {
 	return nil
 }
 
-func handleInstall(container *services.Container) error {
-	return container.ScriptService.SyncShortcuts()
+func terminalWidth() int {
+	width, _, err := xterm.GetSize(os.Stderr.Fd())
+	if err != nil || width <= 0 {
+		return 80
+	}
+	return width
+}
+
+func printInstallHeader() {
+	width := terminalWidth()
+	titleStyle := lipgloss.NewStyle().Foreground(colors.Primary).Bold(true)
+	boxStyle := lipgloss.NewStyle().
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderTop(true).
+		BorderBottom(true).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderForeground(colors.Primary).
+		PaddingLeft(1).
+		Width(width - 2)
+	fmt.Fprintln(os.Stderr, boxStyle.Render(titleStyle.Render("Installing Scripto")))
+}
+
+func printInstallStep(action, detail string) {
+	arrowStyle := lipgloss.NewStyle().Foreground(colors.Primary).Bold(true)
+	actionStyle := lipgloss.NewStyle().Foreground(colors.Primary)
+	detailStyle := lipgloss.NewStyle().Foreground(colors.MutedText)
+	fmt.Fprintf(os.Stderr, "  %s %s %s\n",
+		arrowStyle.Render("→"),
+		actionStyle.Render(action),
+		detailStyle.Render(detail),
+	)
+}
+
+func printInstallNote(note string) {
+	noteStyle := lipgloss.NewStyle().Foreground(colors.MutedText)
+	fmt.Fprintln(os.Stderr, noteStyle.Render("  "+note))
+}
+
+func handleInstall(args []string) error {
+	turbo := false
+	alias := ""
+	for i, arg := range args {
+		if arg == "--turbo" {
+			turbo = true
+		} else if arg == "--alias" && i+1 < len(args) {
+			alias = args[i+1]
+		}
+	}
+
+	printInstallHeader()
+
+	if err := installShellIntegration(); err != nil {
+		return err
+	}
+
+	if turbo {
+		return installAlias("sc")
+	}
+	if alias != "" {
+		return installAlias(alias)
+	}
+
+	fmt.Fprintln(os.Stderr)
+	printInstallNote("Restart your shell or run: source ~/.zshrc")
+	return nil
+}
+
+func installShellIntegration() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	scriptoDir := filepath.Join(homeDir, ".scripto")
+	if err := os.MkdirAll(scriptoDir, 0755); err != nil {
+		return fmt.Errorf("failed to create .scripto directory: %w", err)
+	}
+	printInstallStep("Created directory", scriptoDir)
+
+	zshFile := filepath.Join(scriptoDir, "scripto.zsh")
+	if err := os.WriteFile(zshFile, []byte(zshFunctionContent), 0644); err != nil {
+		return fmt.Errorf("failed to write scripto.zsh: %w", err)
+	}
+	printInstallStep("Wrote shell function", zshFile)
+
+	zshrcPath := filepath.Join(homeDir, ".zshrc")
+	sourceLine := "source ~/.scripto/scripto.zsh"
+	if err := addLineToZshrc(zshrcPath, sourceLine); err != nil {
+		return fmt.Errorf("failed to update .zshrc: %w", err)
+	}
+	printInstallStep("Updated", zshrcPath)
+
+	return nil
+}
+
+func installAlias(aliasName string) error {
+	if !isValidAliasName(aliasName) {
+		return fmt.Errorf("invalid alias name: %s (must be alphanumeric with underscores, no reserved words)", aliasName)
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	scriptoDir := filepath.Join(homeDir, ".scripto")
+	completionFile := filepath.Join(scriptoDir, fmt.Sprintf("%s_completion.zsh", aliasName))
+	if err := generateAliasCompletion(aliasName, completionFile); err != nil {
+		return fmt.Errorf("failed to generate completion file: %w", err)
+	}
+	printInstallStep("Wrote alias completion", completionFile)
+
+	zshrcPath := filepath.Join(homeDir, ".zshrc")
+	if err := addLineToZshrc(zshrcPath, fmt.Sprintf("alias %s='scripto'", aliasName)); err != nil {
+		return fmt.Errorf("failed to add alias to .zshrc: %w", err)
+	}
+	printInstallStep(fmt.Sprintf("Added alias '%s'", aliasName), "→ scripto")
+
+	if err := addLineToZshrc(zshrcPath, fmt.Sprintf("source ~/.scripto/%s_completion.zsh", aliasName)); err != nil {
+		return fmt.Errorf("failed to add completion source to .zshrc: %w", err)
+	}
+	printInstallStep("Added alias completion source", zshrcPath)
+
+	fmt.Fprintln(os.Stderr)
+	printInstallNote("Restart your shell or run: source ~/.zshrc")
+	return nil
+}
+
+func generateAliasCompletion(aliasName, outputPath string) error {
+	tmpl, err := template.New("completion").Parse(aliasCompletionTemplate)
+	if err != nil {
+		return fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create completion file: %w", err)
+	}
+	defer file.Close()
+
+	return tmpl.Execute(file, struct{ Alias string }{Alias: aliasName})
+}
+
+func addLineToZshrc(zshrcPath, line string) error {
+	content, err := os.ReadFile(zshrcPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to read .zshrc: %w", err)
+	}
+
+	contentStr := string(content)
+	if strings.Contains(contentStr, line) {
+		return nil
+	}
+
+	if len(contentStr) > 0 && !strings.HasSuffix(contentStr, "\n") {
+		contentStr += "\n"
+	}
+	contentStr += line + "\n"
+
+	if err := os.WriteFile(zshrcPath, []byte(contentStr), 0644); err != nil {
+		return fmt.Errorf("failed to write .zshrc: %w", err)
+	}
+	return nil
+}
+
+func isValidAliasName(name string) bool {
+	matched, _ := regexp.MatchString(`^[a-zA-Z_][a-zA-Z0-9_]*$`, name)
+	if !matched {
+		return false
+	}
+
+	reserved := []string{
+		"if", "then", "else", "elif", "fi", "case", "esac", "for", "while", "until", "do", "done",
+		"function", "select", "time", "coproc", "in", "return", "exit", "break", "continue",
+		"alias", "unalias", "export", "readonly", "local", "declare", "typeset", "let", "eval",
+		"exec", "source", "builtin", "command", "type", "which", "where", "whence",
+	}
+	for _, word := range reserved {
+		if name == word {
+			return false
+		}
+	}
+	return true
 }
 
 func executeScript(container *services.Container, userArgs []string) error {

@@ -139,6 +139,7 @@ func (h *HistoryScreen) View() string {
 	}
 
 	return PopupStyle.
+		UnsetBackground().
 		Width(popupWidth).
 		Height(popupHeight).
 		Render(content)
@@ -183,12 +184,16 @@ func (h *HistoryScreen) loadHistory() tea.Cmd {
 		allCommands := h.container.HistoryService.GetHistoryCommands()
 		log.Printf("loadHistory: total commands from service: %d", len(allCommands))
 
+		seen := make(map[string]bool)
 		commands := make([]string, 0, len(allCommands))
 		for _, command := range allCommands {
 			command = strings.TrimSpace(command)
 			if strings.HasPrefix(command, "scripto") {
 				log.Printf("loadHistory: filtering out: %q", command)
+			} else if seen[command] {
+				log.Printf("loadHistory: deduping: %q", command)
 			} else {
+				seen[command] = true
 				log.Printf("loadHistory: keeping: %q", command)
 				commands = append(commands, command)
 			}
