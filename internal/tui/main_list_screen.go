@@ -461,18 +461,6 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.pendingGKey {
 		m.pendingGKey = false
 		switch msg.String() {
-		case "h":
-			if m.selectedScript != nil {
-				scriptID := m.selectedScript.ID
-				return m, func() tea.Msg {
-					return ShowExecutionHistoryMsg{scriptID: scriptID}
-				}
-			}
-			return m, nil
-		case "H":
-			return m, func() tea.Msg {
-				return ShowExecutionHistoryMsg{}
-			}
 		case "g":
 			if m.focusedPane == "list" {
 				items := m.buildListItems()
@@ -494,6 +482,18 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "H":
+		if m.selectedScript != nil {
+			scriptID := m.selectedScript.ID
+			return m, func() tea.Msg {
+				return ShowExecutionHistoryMsg{scriptID: scriptID}
+			}
+		}
+		return m, nil
+	case "h":
+		return m, func() tea.Msg {
+			return ShowExecutionHistoryMsg{}
+		}
 	case "?":
 		m.showHelp = !m.showHelp
 		return m, nil
