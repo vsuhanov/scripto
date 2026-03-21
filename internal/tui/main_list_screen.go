@@ -3,10 +3,12 @@ package tui
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/atotto/clipboard"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -67,6 +69,9 @@ type MainListScreen struct {
 	previewViewportReady  bool
 	previewNavMode        bool
 	previewFocusedElement int
+
+	searchMode  bool
+	searchInput textinput.Model
 }
 
 func NewMainListScreen(container *services.Container) (*MainListScreen, error) {
@@ -75,10 +80,15 @@ func NewMainListScreen(container *services.Container) (*MainListScreen, error) {
 		return nil, fmt.Errorf("failed to get config path: %w", err)
 	}
 
+	si := textinput.New()
+	si.Placeholder = "regex filter..."
+	si.CharLimit = 200
+
 	return &MainListScreen{
 		configPath:  configPath,
 		container:   container,
 		focusedPane: "list",
+		searchInput: si,
 	}, nil
 }
 
@@ -100,9 +110,23 @@ func (li listItem) isSelectableHeader() bool {
 
 func (m *MainListScreen) buildListItems() []listItem {
 	scripts := m.activeScripts()
+	filtered := scripts
+	if m.searchMode {
+		if query := m.searchInput.Value(); query != "" {
+			if re, err := regexp.Compile("(?i)" + query); err == nil {
+				var matched []*entities.Script
+				for _, s := range scripts {
+					if re.MatchString(s.Name) {
+						matched = append(matched, s)
+					}
+				}
+				filtered = matched
+			}
+		}
+	}
 	var items []listItem
 	var currentScope string
-	for _, s := range scripts {
+	for _, s := range filtered {
 		if s.Scope != currentScope {
 			items = append(items, listItem{scope: s.Scope})
 			currentScope = s.Scope
@@ -439,6 +463,26 @@ func (m *MainListScreen) handlePreviewNavKeys(msg tea.KeyMsg) (tea.Model, tea.Cm
 	return m, nil
 }
 
+func (m *MainListScreen) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.searchMode = false
+		m.searchInput.Blur()
+		return m, nil
+	case "enter", "tab":
+		m.searchInput.Blur()
+		m.selectedItemIndex = m.firstScriptItemIndex()
+		m.updateSelectedScript()
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.searchInput, cmd = m.searchInput.Update(msg)
+		m.selectedItemIndex = m.firstScriptItemIndex()
+		m.updateSelectedScript()
+		return m, cmd
+	}
+}
+
 func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.confirmDelete {
 		return m.handleDeleteConfirmation(msg)
@@ -448,6 +492,15 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if msg.String() == "?" || msg.String() == "esc" {
 			m.showHelp = false
 		}
+		return m, nil
+	}
+
+	if m.searchInput.Focused() {
+		return m.handleSearchInput(msg)
+	}
+
+	if m.searchMode && msg.String() == "esc" {
+		m.searchMode = false
 		return m, nil
 	}
 
@@ -482,6 +535,17 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
+	case "/":
+		m.searchMode = true
+		m.searchInput.SetValue("")
+		m.searchInput.Focus()
+		return m, nil
+
+	case "\\":
+		m.searchMode = true
+		m.searchInput.Focus()
+		return m, nil
+
 	case "H":
 		if m.selectedScript != nil {
 			scriptID := m.selectedScript.ID

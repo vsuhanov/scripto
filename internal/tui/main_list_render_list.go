@@ -28,6 +28,15 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 	// 	Height(height).
 	// 	Render(lipgloss.NewStyle().Foreground(lipgloss.Color("#ff9900")).Bold(false).Render("mytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nmytext \n my text \nytext \n my text \n"))
 
+	searchBarLines := 0
+	var searchBarStr string
+	if m.searchMode {
+		m.searchInput.Width = maxListItemWidth - 4
+		prefix := lipgloss.NewStyle().Foreground(primaryColor).Bold(true).Render("/")
+		searchBarStr = prefix + " " + m.searchInput.View() + "\n"
+		searchBarLines = 1
+	}
+
 	listItems := m.buildListItems()
 	var items []string
 
@@ -52,7 +61,7 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 
 	content := strings.Join(items, "\n")
 
-	maxPossibleContentHeight := max(1, maxHeight-totalVerticalBorder)
+	maxPossibleContentHeight := max(1, maxHeight-totalVerticalBorder-searchBarLines)
 
 	var start, end int
 	if len(items) > maxPossibleContentHeight {
@@ -74,7 +83,7 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 		Height(maxHeight - totalVerticalBorder).
 		MaxHeight(maxHeight)
 
-	rendered := style.Render(content)
+	rendered := style.Render(searchBarStr + content)
 	// renderedHeight := lipgloss.Height(rendered)
 
 	// for renderedHeight > contentHeight && len(lines) > 1 {
