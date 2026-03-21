@@ -33,6 +33,13 @@ const (
 	sortModeCount
 )
 
+const (
+	scopeModeCurrentHierarchy = iota
+	scopeModeAllScopes
+	scopeModeAllWithArchived
+	scopeModeCount
+)
+
 type MainListScreen struct {
 	scripts           []*entities.Script
 	allScripts        []*entities.Script
@@ -60,10 +67,11 @@ type MainListScreen struct {
 	quitting      bool
 	pendingGKey   bool
 
-	sortMode       int
-	scriptStats    map[string]services.ScriptStats
-	frecencyScores map[string]float64
-	showAllScopes  bool
+	sortMode        int
+	scriptStats     map[string]services.ScriptStats
+	frecencyScores  map[string]float64
+	scopeMode       int
+	archivedScripts []*entities.Script
 
 	previewViewport       viewport.Model
 	previewViewportReady  bool
@@ -93,10 +101,14 @@ func NewMainListScreen(container *services.Container) (*MainListScreen, error) {
 }
 
 func (m *MainListScreen) activeScripts() []*entities.Script {
-	if m.showAllScopes {
+	switch m.scopeMode {
+	case scopeModeAllScopes:
 		return m.allScripts
+	case scopeModeAllWithArchived:
+		return m.archivedScripts
+	default:
+		return m.scripts
 	}
-	return m.scripts
 }
 
 type listItem struct {
@@ -173,10 +185,11 @@ func (m *MainListScreen) Init() tea.Cmd {
 }
 
 type scriptsWithStatsMsg struct {
-	scripts        []*entities.Script
-	allScripts     []*entities.Script
-	stats          map[string]services.ScriptStats
-	frecencyScores map[string]float64
+	scripts         []*entities.Script
+	allScripts      []*entities.Script
+	archivedScripts []*entities.Script
+	stats           map[string]services.ScriptStats
+	frecencyScores  map[string]float64
 }
 
 func (m *MainListScreen) loadScripts() tea.Cmd {
@@ -189,6 +202,11 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 		allScripts, err := m.container.ScriptService.FindAllScopesScripts()
 		if err != nil {
 			allScripts = scripts
+		}
+
+		archivedScripts, err := m.container.ScriptService.FindAllScopesScriptsWithArchived()
+		if err != nil {
+			archivedScripts = allScripts
 		}
 
 		var stats map[string]services.ScriptStats
@@ -204,7 +222,7 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 			frecencyScores = map[string]float64{}
 		}
 
-		return scriptsWithStatsMsg{scripts: scripts, allScripts: allScripts, stats: stats, frecencyScores: frecencyScores}
+		return scriptsWithStatsMsg{scripts: scripts, allScripts: allScripts, archivedScripts: archivedScripts, stats: stats, frecencyScores: frecencyScores}
 	}
 }
 
@@ -251,6 +269,7 @@ func (m *MainListScreen) sortScripts() {
 
 	m.scripts = sortList(m.scripts)
 	m.allScripts = sortList(m.allScripts)
+	m.archivedScripts = sortList(m.archivedScripts)
 }
 
 func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -297,6 +316,7 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scriptsWithStatsMsg:
 		m.scripts = msg.scripts
 		m.allScripts = msg.allScripts
+		m.archivedScripts = msg.archivedScripts
 		m.scriptStats = msg.stats
 		m.frecencyScores = msg.frecencyScores
 		m.ready = true
@@ -310,6 +330,7 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ScriptDeletedMsg:
 		m.scripts = removeScript(m.scripts, msg.script)
 		m.allScripts = removeScript(m.allScripts, msg.script)
+		m.archivedScripts = removeScript(m.archivedScripts, msg.script)
 		if m.selectedItemIndex >= len(m.buildListItems()) && m.selectedItemIndex > 0 {
 			m.selectedItemIndex--
 		}
@@ -318,6 +339,25 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateSelectedScript()
 		m.statusMsg = "Script deleted"
 		return m, nil
+
+	case ScriptArchivedMsg:
+		m.scripts = removeScript(m.scripts, msg.script)
+		m.allScripts = removeScript(m.allScripts, msg.script)
+		if m.selectedItemIndex >= len(m.buildListItems()) && m.selectedItemIndex > 0 {
+			m.selectedItemIndex--
+		}
+		m.selectedScript = nil
+		m.previewViewport.SetContent("")
+		return m, tea.Batch(
+			func() tea.Msg { return StatusMsg("Archived") },
+			m.loadScripts(),
+		)
+
+	case ScriptUnarchivedMsg:
+		return m, tea.Batch(
+			func() tea.Msg { return StatusMsg("Unarchived") },
+			m.loadScripts(),
+		)
 
 	case ErrorMsg:
 		m.err = error(msg)
@@ -644,15 +684,18 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "S":
-		m.showAllScopes = !m.showAllScopes
+		m.scopeMode = (m.scopeMode + 1) % scopeModeCount
 		if m.selectedItemIndex >= len(m.buildListItems()) {
 			m.selectedItemIndex = 0
 		}
 		m.updateSelectedScript()
-		if m.showAllScopes {
-			m.statusMsg = "Showing all scopes"
-		} else {
+		switch m.scopeMode {
+		case scopeModeCurrentHierarchy:
 			m.statusMsg = "Showing current scopes only"
+		case scopeModeAllScopes:
+			m.statusMsg = "Showing all scopes"
+		case scopeModeAllWithArchived:
+			m.statusMsg = "Showing all scopes + archived"
 		}
 		return m, nil
 
@@ -717,17 +760,19 @@ func removeScript(list []*entities.Script, target *entities.Script) []*entities.
 }
 
 func (m *MainListScreen) handleDeleteRequest() (tea.Model, tea.Cmd) {
-	if m.selectedScript != nil {
-		m.confirmDelete = true
-		m.statusMsg = "Delete script? (y/n)"
-	}
-	return m, nil
+	return m.handleImmediateDelete()
 }
 
 func (m *MainListScreen) handleImmediateDelete() (tea.Model, tea.Cmd) {
 	if m.selectedScript != nil {
+		script := m.selectedScript
+		if script.Archived {
+			return m, func() tea.Msg {
+				return UnarchiveScriptMsg{script: script}
+			}
+		}
 		return m, func() tea.Msg {
-			return DeleteScriptMsg{script: m.selectedScript}
+			return ArchiveScriptMsg{script: script}
 		}
 	}
 	return m, nil
@@ -738,15 +783,21 @@ func (m *MainListScreen) handleDeleteConfirmation(msg tea.KeyMsg) (tea.Model, te
 	case "y", "Y":
 		m.confirmDelete = false
 		if m.selectedScript != nil {
+			script := m.selectedScript
+			if script.Archived {
+				return m, func() tea.Msg {
+					return UnarchiveScriptMsg{script: script}
+				}
+			}
 			return m, func() tea.Msg {
-				return DeleteScriptMsg{script: m.selectedScript}
+				return ArchiveScriptMsg{script: script}
 			}
 		}
 		return m, nil
 
 	case "n", "N", "esc":
 		m.confirmDelete = false
-		m.statusMsg = "Delete cancelled"
+		m.statusMsg = "Cancelled"
 		return m, nil
 	}
 	return m, nil
@@ -790,7 +841,7 @@ func (m *MainListScreen) renderHeader() string {
 func (m *MainListScreen) renderFooter() string {
 	var statusText string
 	if m.confirmDelete {
-		statusText = "Delete script? (y/n)"
+		statusText = m.statusMsg
 	} else if m.statusMsg != "" {
 		statusText = m.statusMsg
 	} else {
@@ -830,12 +881,12 @@ Actions:
   ↵ (enter)    Execute selected script
   e            Edit script inline
   E            Edit script in external editor
-  d            Delete script (with confirmation)
-  D            Delete script immediately
+  d            Archive script (with confirmation) / Unarchive if archived
+  D            Archive script immediately / Unarchive if archived
   y            Copy command to clipboard
 
 Other:
-  S            Toggle all scopes visibility
+  S            Cycle scope view: current → all → all+archived
   ?            Toggle this help
   q, Ctrl+C    Quit
 

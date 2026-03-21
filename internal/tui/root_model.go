@@ -176,6 +176,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case DeleteScriptMsg:
 		return m, m.handleDeleteScript(msg.script)
 
+	case ArchiveScriptMsg:
+		return m, m.handleArchiveScript(msg.script)
+
+	case UnarchiveScriptMsg:
+		return m, m.handleUnarchiveScript(msg.script)
+
 	case EditScriptExternalMsg:
 		return m, m.handleEditScriptExternal(msg.script)
 
@@ -344,6 +350,24 @@ func (m *RootModel) handleDeleteScript(script *entities.Script) tea.Cmd {
 			return ErrorMsg(fmt.Errorf("error deleting script: %w", err))
 		}
 		return ScriptDeletedMsg{script: script}
+	}
+}
+
+func (m *RootModel) handleArchiveScript(script *entities.Script) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.container.ScriptService.ArchiveScript(script); err != nil {
+			return ErrorMsg(fmt.Errorf("error archiving script: %w", err))
+		}
+		return ScriptArchivedMsg{script: script}
+	}
+}
+
+func (m *RootModel) handleUnarchiveScript(script *entities.Script) tea.Cmd {
+	return func() tea.Msg {
+		if err := m.container.ScriptService.UnarchiveScript(script); err != nil {
+			return ErrorMsg(fmt.Errorf("error unarchiving script: %w", err))
+		}
+		return ScriptUnarchivedMsg{script: script}
 	}
 }
 

@@ -113,10 +113,13 @@ func (m *MainListScreen) formatScriptItem(script entities.Script, index int, max
 		displayName = utils.TruncateString(displayName, (maxWidth-4-indent)) + "…"
 	}
 
-	item := ListItemStyle.Bold(false).Width(maxWidth - 4).Render(displayName)
-
+	var item string
 	if index == m.selectedItemIndex {
 		item = ListItemSelectedStyle.Width(maxWidth - 4).Render(displayName)
+	} else if script.Archived {
+		item = ArchivedListItemStyle.Width(maxWidth - 4).Render(displayName)
+	} else {
+		item = ListItemStyle.Bold(false).Width(maxWidth - 4).Render(displayName)
 	}
 
 	parts = append(parts, item)

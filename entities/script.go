@@ -8,4 +8,5 @@ type Script struct {
 	Scope                      string `json:"scope"`
 	PlaceholderStartDemarcator string `json:"placeholder_start_demarcator,omitempty"`
 	PlaceholderEndDemarcator   string `json:"placeholder_end_demarcator,omitempty"`
+	Archived                   bool   `json:"archived,omitempty"`
 }

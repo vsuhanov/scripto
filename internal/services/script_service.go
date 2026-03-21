@@ -125,6 +125,132 @@ func (s *ScriptService) DeleteScript(script *entities.Script) error {
 	return nil
 }
 
+func (s *ScriptService) ArchiveScript(script *entities.Script) error {
+	config, err := storage.ReadConfig(s.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	scripts, exists := config[script.Scope]
+	if !exists {
+		return fmt.Errorf("script scope not found in config")
+	}
+
+	found := false
+	for _, configScript := range scripts {
+		if s.scriptsMatch(configScript, script) {
+			configScript.Archived = true
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("script not found in config")
+	}
+
+	if err := storage.WriteConfig(s.configPath, config); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	s.config = config
+	return nil
+}
+
+func (s *ScriptService) UnarchiveScript(script *entities.Script) error {
+	config, err := storage.ReadConfig(s.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	scripts, exists := config[script.Scope]
+	if !exists {
+		return fmt.Errorf("script scope not found in config")
+	}
+
+	found := false
+	for _, configScript := range scripts {
+		if s.scriptsMatch(configScript, script) {
+			configScript.Archived = false
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("script not found in config")
+	}
+
+	if err := storage.WriteConfig(s.configPath, config); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	s.config = config
+	return nil
+}
+
+func (s *ScriptService) FindAllScopesScriptsWithArchived() ([]*entities.Script, error) {
+	var mainScripts []*entities.Script
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]bool)
+
+	if scripts, exists := s.config[cwd]; exists {
+		for _, scriptEnt := range scripts {
+			scriptEnt.Scope = cwd
+			mainScripts = append(mainScripts, scriptEnt)
+		}
+		seen[cwd] = true
+	}
+
+	dir := cwd
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir || parent == "/" {
+			break
+		}
+		if !seen[parent] {
+			if scripts, exists := s.config[parent]; exists {
+				for _, scriptEnt := range scripts {
+					scriptEnt.Scope = parent
+					mainScripts = append(mainScripts, scriptEnt)
+				}
+			}
+			seen[parent] = true
+		}
+		dir = parent
+	}
+
+	if scripts, exists := s.config["global"]; exists {
+		for _, scriptEnt := range scripts {
+			scriptEnt.Scope = "global"
+			mainScripts = append(mainScripts, scriptEnt)
+		}
+		seen["global"] = true
+	}
+
+	var extra []*entities.Script
+	for scope, scripts := range s.config {
+		if seen[scope] {
+			continue
+		}
+		for _, scriptEnt := range scripts {
+			scriptEnt.Scope = scope
+			extra = append(extra, scriptEnt)
+		}
+	}
+
+	sort.Slice(extra, func(i, j int) bool {
+		return extra[i].Scope < extra[j].Scope
+	})
+
+	return append(mainScripts, extra...), nil
+}
+
 func (s *ScriptService) CreateEmptyScript() *entities.Script {
 	scope := "global"
 	if cwd, err := os.Getwd(); err == nil {
@@ -257,6 +383,9 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 
 	if scripts, exists := s.config[cwd]; exists {
 		for _, scriptEnt := range scripts {
+			if scriptEnt.Archived {
+				continue
+			}
 			scriptEnt.Scope = cwd
 			results = append(results, scriptEnt)
 		}
@@ -273,6 +402,9 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 		if !seen[parent] {
 			if scripts, exists := s.config[parent]; exists {
 				for _, scriptEnt := range scripts {
+					if scriptEnt.Archived {
+						continue
+					}
 					scriptEnt.Scope = parent
 					results = append(results, scriptEnt)
 				}
@@ -285,6 +417,9 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 
 	if scripts, exists := s.config["global"]; exists {
 		for _, scriptEnt := range scripts {
+			if scriptEnt.Archived {
+				continue
+			}
 			scriptEnt.Scope = "global"
 			results = append(results, scriptEnt)
 		}
@@ -310,6 +445,9 @@ func (s *ScriptService) FindAllScopesScripts() ([]*entities.Script, error) {
 			continue
 		}
 		for _, scriptEnt := range scripts {
+			if scriptEnt.Archived {
+				continue
+			}
 			scriptEnt.Scope = scope
 			extra = append(extra, scriptEnt)
 		}

@@ -61,6 +61,22 @@ type ScriptDeletedMsg struct {
 	script *entities.Script
 }
 
+type ArchiveScriptMsg struct {
+	script *entities.Script
+}
+
+type ScriptArchivedMsg struct {
+	script *entities.Script
+}
+
+type UnarchiveScriptMsg struct {
+	script *entities.Script
+}
+
+type ScriptUnarchivedMsg struct {
+	script *entities.Script
+}
+
 type CopyScriptToClipboardMsg struct {
 	script *entities.Script
 }

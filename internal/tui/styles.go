@@ -268,6 +268,10 @@ var (
 			Foreground(mutedTextColor).
 			Italic(true).
 			Align(lipgloss.Center)
+
+	ArchivedListItemStyle = lipgloss.NewStyle().
+				Foreground(colors.MutedText).
+				Padding(0, 1)
 )
 
 // GetScopeStyle returns the appropriate style for a script scope
