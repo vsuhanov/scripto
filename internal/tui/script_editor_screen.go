@@ -15,11 +15,13 @@ import (
 )
 
 type ScriptEditorScreen struct {
-	nameInput        textinput.Model
-	descriptionInput textinput.Model
-	commandTextarea  textarea.Model
-	scopeInput       textinput.Model
-	globalCheckbox   bool
+	nameInput              textinput.Model
+	descriptionInput       textinput.Model
+	commandTextarea        textarea.Model
+	scopeInput             textinput.Model
+	startDemarcatorInput   textinput.Model
+	endDemarcatorInput     textinput.Model
+	globalCheckbox         bool
 
 	focusedField int
 	active       bool
@@ -36,14 +38,16 @@ type ScriptEditorScreen struct {
 }
 
 const (
-	EditorScreenFieldName        = 0
-	EditorScreenFieldDescription = 1
-	EditorScreenFieldCommand     = 2
-	EditorScreenFieldGlobal      = 3
-	EditorScreenFieldScope       = 4
-	EditorScreenFieldSave        = 5
-	EditorScreenFieldCancel      = 6
-	EditorScreenFieldCount       = 7
+	EditorScreenFieldName             = 0
+	EditorScreenFieldDescription      = 1
+	EditorScreenFieldCommand          = 2
+	EditorScreenFieldGlobal           = 3
+	EditorScreenFieldScope            = 4
+	EditorScreenFieldStartDemarcator  = 5
+	EditorScreenFieldEndDemarcator    = 6
+	EditorScreenFieldSave             = 7
+	EditorScreenFieldCancel           = 8
+	EditorScreenFieldCount            = 9
 )
 
 func NewScriptEditorScreen(script *entities.Script, isNewScript bool, container *services.Container) *ScriptEditorScreen {
@@ -57,7 +61,7 @@ func NewScriptEditorScreen(script *entities.Script, isNewScript bool, container 
 	}
 }
 
-func (e *ScriptEditorScreen) GetEditorValues() (name, description, command, scope string) {
+func (e *ScriptEditorScreen) GetEditorValues() (name, description, command, scope, startDemarcator, endDemarcator string) {
 	name = e.nameInput.Value()
 	description = e.descriptionInput.Value()
 	command = e.commandTextarea.Value()
@@ -66,6 +70,8 @@ func (e *ScriptEditorScreen) GetEditorValues() (name, description, command, scop
 	} else {
 		scope = e.scopeInput.Value()
 	}
+	startDemarcator = e.startDemarcatorInput.Value()
+	endDemarcator = e.endDemarcatorInput.Value()
 	return
 }
 
@@ -142,6 +148,18 @@ func (e *ScriptEditorScreen) initializeComponents() {
 		}
 	}
 
+	e.startDemarcatorInput = textinput.New()
+	e.startDemarcatorInput.Placeholder = "% (default)"
+	e.startDemarcatorInput.SetValue(e.originalScript.PlaceholderStartDemarcator)
+	e.startDemarcatorInput.CharLimit = 10
+	e.startDemarcatorInput.Width = componentWidth / 2
+
+	e.endDemarcatorInput = textinput.New()
+	e.endDemarcatorInput.Placeholder = "% (default)"
+	e.endDemarcatorInput.SetValue(e.originalScript.PlaceholderEndDemarcator)
+	e.endDemarcatorInput.CharLimit = 10
+	e.endDemarcatorInput.Width = componentWidth / 2
+
 	e.focusedField = EditorScreenFieldName
 	e.updateFocus()
 }
@@ -193,6 +211,10 @@ func (e *ScriptEditorScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		e.commandTextarea, cmd = e.commandTextarea.Update(msg)
 	case EditorScreenFieldScope:
 		e.scopeInput, cmd = e.scopeInput.Update(msg)
+	case EditorScreenFieldStartDemarcator:
+		e.startDemarcatorInput, cmd = e.startDemarcatorInput.Update(msg)
+	case EditorScreenFieldEndDemarcator:
+		e.endDemarcatorInput, cmd = e.endDemarcatorInput.Update(msg)
 	}
 
 	return e, cmd
@@ -218,7 +240,7 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		if e.focusedField == EditorScreenFieldSave {
-			name, description, command, scope := e.GetEditorValues()
+			name, description, command, scope, startDemarcator, endDemarcator := e.GetEditorValues()
 			if name == "" {
 				e.errorMessage = "Name is required"
 				return e, nil
@@ -229,11 +251,13 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			e.active = false
 			script := &entities.Script{
-				ID:          e.originalScript.ID,
-				Name:        name,
-				Description: description,
-				FilePath:    e.originalScript.FilePath,
-				Scope:       scope,
+				ID:                         e.originalScript.ID,
+				Name:                       name,
+				Description:                description,
+				FilePath:                   e.originalScript.FilePath,
+				Scope:                      scope,
+				PlaceholderStartDemarcator: startDemarcator,
+				PlaceholderEndDemarcator:   endDemarcator,
 			}
 			var original *entities.Script
 			if !e.isNewScript {
@@ -277,6 +301,10 @@ func (e *ScriptEditorScreen) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			e.commandTextarea, cmd = e.commandTextarea.Update(msg)
 		case EditorScreenFieldScope:
 			e.scopeInput, cmd = e.scopeInput.Update(msg)
+		case EditorScreenFieldStartDemarcator:
+			e.startDemarcatorInput, cmd = e.startDemarcatorInput.Update(msg)
+		case EditorScreenFieldEndDemarcator:
+			e.endDemarcatorInput, cmd = e.endDemarcatorInput.Update(msg)
 		}
 		return e, cmd
 	}
@@ -287,6 +315,8 @@ func (e *ScriptEditorScreen) updateFocus() {
 	e.descriptionInput.Blur()
 	e.commandTextarea.Blur()
 	e.scopeInput.Blur()
+	e.startDemarcatorInput.Blur()
+	e.endDemarcatorInput.Blur()
 
 	switch e.focusedField {
 	case EditorScreenFieldName:
@@ -299,6 +329,10 @@ func (e *ScriptEditorScreen) updateFocus() {
 		if !e.globalCheckbox {
 			e.scopeInput.Focus()
 		}
+	case EditorScreenFieldStartDemarcator:
+		e.startDemarcatorInput.Focus()
+	case EditorScreenFieldEndDemarcator:
+		e.endDemarcatorInput.Focus()
 	}
 }
 
@@ -373,6 +407,20 @@ func (e *ScriptEditorScreen) View() string {
 		sections = append(sections, scopeLabel)
 		sections = append(sections, e.scopeInput.View())
 	}
+
+	startLabel := FieldLabelStyle.Render("Placeholder start:")
+	if e.focusedField == EditorScreenFieldStartDemarcator {
+		startLabel = FieldLabelStyle.Foreground(primaryColor).Render("Placeholder start:")
+	}
+	sections = append(sections, startLabel)
+	sections = append(sections, e.startDemarcatorInput.View())
+
+	endLabel := FieldLabelStyle.Render("Placeholder end:")
+	if e.focusedField == EditorScreenFieldEndDemarcator {
+		endLabel = FieldLabelStyle.Foreground(primaryColor).Render("Placeholder end:")
+	}
+	sections = append(sections, endLabel)
+	sections = append(sections, e.endDemarcatorInput.View())
 
 	buttons := e.renderButtons(popupWidth)
 	sections = append(sections, buttons)

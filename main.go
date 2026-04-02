@@ -365,36 +365,10 @@ func executeFoundScript(container *services.Container, scriptEnt *entities.Scrip
 
 func handleNoMatch(container *services.Container, input string) error {
 	scriptObj := container.ScriptService.CreateEmptyScript()
-
-	tempFilePath, err := container.ScriptService.CreateTempScriptFile(input)
-	if err != nil {
-		return fmt.Errorf("failed to create temp script file: %w", err)
-	}
-	scriptObj.FilePath = tempFilePath
-
-	fmt.Printf("Command '%s' not found. Create new script?\n", input)
-
-	result, err := tui.RunScriptEditor(scriptObj, true)
-	if err != nil {
-		return fmt.Errorf("TUI error: %w", err)
-	}
-
-	if result.Cancelled {
-		return fmt.Errorf("command not found: %s", input)
-	}
-
-	finalCommand := result.Command
-	if finalCommand == "" {
-		finalCommand = input
-	}
-
-	if err := container.ScriptService.SaveScript(result.Script, finalCommand, nil); err != nil {
-		return fmt.Errorf("failed to save script: %w", err)
-	}
-
-	fmt.Printf("Saved script successfully\n")
-
-	return executeFoundScript(container, result.Script, []string{})
+	return tui.RunApp(container, tui.ShowScriptEditorRequest{
+		Script:         scriptObj,
+		InitialCommand: input,
+	})
 }
 
 func handleCompletion(container *services.Container, args []string) {

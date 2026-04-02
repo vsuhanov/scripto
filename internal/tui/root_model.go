@@ -31,6 +31,13 @@ type ExecuteScriptRequest struct {
 
 func (ExecuteScriptRequest) tuiRequest() {}
 
+type ShowScriptEditorRequest struct {
+	Script         *entities.Script
+	InitialCommand string
+}
+
+func (ShowScriptEditorRequest) tuiRequest() {}
+
 type RootModel struct {
 	container                        *services.Container
 	currentScreen                    tea.Model
@@ -57,9 +64,13 @@ func NewRootModel(container *services.Container, request TuiRequest) (*RootModel
 	var initialScreen tea.Model
 	var err error
 
-	switch request.(type) {
+	switch req := request.(type) {
 	case ShowAddScreenRequest:
 		initialScreen = NewHistoryScreen(container)
+	case ShowScriptEditorRequest:
+		editor := NewScriptEditorScreen(req.Script, true, container)
+		editor.initialCommand = req.InitialCommand
+		initialScreen = editor
 	default:
 		initialScreen, err = NewMainListScreen(container)
 		if err != nil {
