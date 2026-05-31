@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"os"
 	"scripto/entities"
-	"scripto/internal/args"
+	"scripto/internal/templatex"
 	"strings"
 )
 
 type ArgumentProcessingResult struct {
 	NeedsPlaceholderForm bool
-	Placeholders         []args.PlaceholderValue
+	Metas                []templatex.VariableMeta
 	FinalCommand         string
 	OriginalScript       string
 }
@@ -49,89 +49,53 @@ func (es *ExecutionService) ProcessScriptArguments(s *entities.Script, scriptArg
 		}, nil
 	}
 
-	processor := args.NewArgumentProcessor(s)
-
-	if err := processor.ValidateArguments(scriptArgs); err != nil {
-		return nil, err
-	}
-
-	result, err := processor.ProcessArguments(scriptArgs)
+	trimmed := strings.TrimSpace(contentStr)
+	metas, err := templatex.ExtractVariables(trimmed)
 	if err != nil {
-		return nil, fmt.Errorf("failed to process arguments: %w", err)
+		return nil, fmt.Errorf("failed to parse template: %w", err)
 	}
 
-	hasPlaceholders := len(result.Placeholders) > 0
-
-	if !hasPlaceholders {
+	if len(metas) == 0 {
 		return &ArgumentProcessingResult{
 			NeedsPlaceholderForm: false,
-			FinalCommand:         result.FinalCommand,
+			FinalCommand:         trimmed,
 			OriginalScript:       contentStr,
 		}, nil
 	}
 
-	var allPlaceholders []args.PlaceholderValue
-	placeholderOrder := processor.GetPlaceholderOrder()
-
-	for _, name := range placeholderOrder {
-		if placeholder, exists := result.Placeholders[name]; exists {
-			if placeholder.Provided && placeholder.Value != "" {
-				placeholder.DefaultValue = placeholder.Value
-			}
-			allPlaceholders = append(allPlaceholders, placeholder)
-		}
-	}
-
-	if len(allPlaceholders) == 0 {
-		for _, placeholder := range result.Placeholders {
-			if placeholder.Provided && placeholder.Value != "" {
-				placeholder.DefaultValue = placeholder.Value
-			}
-			allPlaceholders = append(allPlaceholders, placeholder)
-		}
-	}
-
 	return &ArgumentProcessingResult{
 		NeedsPlaceholderForm: true,
-		Placeholders:         allPlaceholders,
+		Metas:                metas,
 		OriginalScript:       contentStr,
 	}, nil
 }
 
-func (es *ExecutionService) PrepareExecution(s *entities.Script, scriptArgs []string, placeholderValues map[string]string) (string, error) {
-	processor := args.NewArgumentProcessor(s)
-
-	result, err := processor.ProcessArguments(scriptArgs)
+func (es *ExecutionService) PrepareExecution(s *entities.Script, _ []string, placeholderValues map[string]string) (string, error) {
+	content, err := os.ReadFile(s.FilePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to process arguments: %w", err)
+		return "", fmt.Errorf("failed to read script file %s: %w", s.FilePath, err)
 	}
 
+	contentStr := strings.TrimSpace(string(content))
+
+	metas, err := templatex.ExtractVariables(contentStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template: %w", err)
+	}
+
+	values := make(map[string]string)
+	for _, meta := range metas {
+		if meta.DefaultValue != "" {
+			values[meta.Name] = meta.DefaultValue
+		}
+	}
 	for name, value := range placeholderValues {
-		if placeholder, exists := result.Placeholders[name]; exists {
-			placeholder.Value = value
-			placeholder.Provided = true
-			result.Placeholders[name] = placeholder
+		if value != "" {
+			values[name] = value
 		}
 	}
 
-	hasPositional, err := processor.HasPositionalPlaceholders()
-	if err != nil {
-		return "", fmt.Errorf("failed to check placeholder types: %w", err)
-	}
-
-	var additionalArgs []string
-	if hasPositional {
-		additionalArgs = es.convertToPositionalArgs(placeholderValues, result.Placeholders)
-	} else {
-		additionalArgs = es.convertToArgs(placeholderValues)
-	}
-
-	newResult, err := processor.ProcessArguments(append(scriptArgs, additionalArgs...))
-	if err != nil {
-		return "", err
-	}
-
-	return newResult.FinalCommand, nil
+	return templatex.Execute(contentStr, values)
 }
 
 func (es *ExecutionService) PrepareDirectExecution(processingResult *ArgumentProcessingResult) (string, error) {
@@ -139,20 +103,4 @@ func (es *ExecutionService) PrepareDirectExecution(processingResult *ArgumentPro
 		return "", fmt.Errorf("processing result is nil")
 	}
 	return processingResult.FinalCommand, nil
-}
-
-func (es *ExecutionService) convertToArgs(values map[string]string) []string {
-	var arguments []string
-	for name, value := range values {
-		arguments = append(arguments, fmt.Sprintf("--%s=%s", name, value))
-	}
-	return arguments
-}
-
-func (es *ExecutionService) convertToPositionalArgs(values map[string]string, _ map[string]args.PlaceholderValue) []string {
-	var arguments []string
-	for _, value := range values {
-		arguments = append(arguments, value)
-	}
-	return arguments
 }

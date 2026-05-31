@@ -288,7 +288,7 @@ func (m *RootModel) showExecutionForm(script *entities.Script, scriptArgs []stri
 		return ShowPlaceholderFormMsg{
 			script:         script,
 			action:         "execute",
-			placeholders:   processingResult.Placeholders,
+			placeholders:   processingResult.Metas,
 			originalScript: processingResult.OriginalScript,
 			workingDir:     workingDir,
 		}
@@ -325,7 +325,7 @@ func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptAr
 			}
 		}
 
-		return ShowPlaceholderFormMsg{script: script, action: "execute", placeholders: processingResult.Placeholders, originalScript: processingResult.OriginalScript, workingDir: workingDir}
+		return ShowPlaceholderFormMsg{script: script, action: "execute", placeholders: processingResult.Metas, originalScript: processingResult.OriginalScript, workingDir: workingDir}
 	}
 }
 
@@ -345,7 +345,7 @@ func (m *RootModel) handleCopyScriptToClipboard(script *entities.Script) tea.Cmd
 			return StatusMsg("Copied to clipboard")
 		}
 
-		return ShowPlaceholderFormMsg{script: script, action: "copy", placeholders: processingResult.Placeholders}
+		return ShowPlaceholderFormMsg{script: script, action: "copy", placeholders: processingResult.Metas}
 	}
 }
 

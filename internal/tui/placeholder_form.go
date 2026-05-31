@@ -11,6 +11,7 @@ import (
 	"scripto/entities"
 	"scripto/internal/args"
 	"scripto/internal/services"
+	"scripto/internal/templatex"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -20,7 +21,7 @@ import (
 )
 
 type PlaceholderFormModel struct {
-	placeholders  []args.PlaceholderValue
+	placeholders  []templatex.VariableMeta
 	inputs        []textinput.Model
 	focused       int
 	submitted     bool
@@ -51,7 +52,7 @@ type placeholderHistoryLoadedMsg struct {
 
 const leftPaneWidth = 54
 
-func NewPlaceholderForm(script *entities.Script, placeholders []args.PlaceholderValue,
+func NewPlaceholderForm(script *entities.Script, placeholders []templatex.VariableMeta,
 	width, height int, container *services.Container, originalScript string, workingDir string) PlaceholderFormModel {
 	inputs := make([]textinput.Model, len(placeholders))
 
@@ -534,6 +535,14 @@ func (m PlaceholderFormModel) handleFormKey(msg tea.KeyMsg) (PlaceholderFormMode
 			return m, nil
 		}
 		return m.prevFocus()
+
+	default:
+		if m.buttonFocus == 0 && len(m.inputs) > 0 {
+			var cmd tea.Cmd
+			m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
+			m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
+			return m, cmd
+		}
 	}
 	return m, nil
 }
@@ -631,23 +640,12 @@ func (m PlaceholderFormModel) View() string {
 	}
 
 	for i, placeholder := range m.placeholders {
-		label := placeholder.Name
-		if placeholder.IsPositional {
-			label = fmt.Sprintf("Argument %d", i+1)
-		}
-
-		b.WriteString(FieldLabelStyle.Render(label))
+		b.WriteString(FieldLabelStyle.Render(placeholder.Label))
 		b.WriteString("\n")
 
-		if len(placeholder.Descriptions) > 1 {
-			for i, desc := range placeholder.Descriptions {
-				b.WriteString(" ")
-				b.WriteString(DescriptionStyle.Render(fmt.Sprintf("%d. %s", i+1, desc)))
-				b.WriteString("\n")
-			}
-		} else if placeholder.Description != "" {
+		if len(placeholder.AllowedValues) > 0 {
 			b.WriteString(" ")
-			b.WriteString(DescriptionStyle.Render(fmt.Sprintf("(%s)", placeholder.Description)))
+			b.WriteString(DescriptionStyle.Render(fmt.Sprintf("(%s)", strings.Join(placeholder.AllowedValues, ", "))))
 			b.WriteString("\n")
 		}
 

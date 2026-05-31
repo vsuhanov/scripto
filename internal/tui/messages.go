@@ -5,8 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"scripto/entities"
-	"scripto/internal/args"
 	"scripto/internal/services"
+	"scripto/internal/templatex"
 )
 
 const (
@@ -113,7 +113,7 @@ type ShowScriptExecutionWithWorkingDirMsg struct {
 type ShowPlaceholderFormMsg struct {
 	script         *entities.Script
 	action         string
-	placeholders   []args.PlaceholderValue
+	placeholders   []templatex.VariableMeta
 	originalScript string
 	workingDir     string
 }
