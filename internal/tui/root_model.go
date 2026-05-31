@@ -196,6 +196,17 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.handleSaveScript(msg.script, msg.command, msg.original)
 
 	case ScriptSavedMsg:
+		if len(m.screenStack) > 0 {
+			m.currentScreen = m.screenStack[len(m.screenStack)-1]
+			m.screenStack = m.screenStack[:len(m.screenStack)-1]
+			if mainList, ok := m.currentScreen.(*MainListScreen); ok {
+				mainList.RefreshScripts()
+			}
+			if model, ok := m.currentScreen.(tea.Model); ok {
+				return m, model.Init()
+			}
+			return m, nil
+		}
 		m.pendingSavedScript = msg.script
 		m.pendingSavedCommand = msg.command
 		return m, tea.Quit
