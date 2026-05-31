@@ -22,7 +22,16 @@ Scripto allows you to store command snippets with placeholders, organize them by
 
 - A Unix-like shell (bash, zsh, fish)
 
-### Download Pre-built Binary (Recommended)
+### Homebrew (Recommended)
+
+```bash
+brew tap vsuhanov/scripto
+brew install scripto
+scripto install
+source ~/.zshrc
+```
+
+### Download Pre-built Binary
 
 1. **Download the latest release from GitHub:**
    ```bash
@@ -473,6 +482,35 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 🔄 Script templates and snippets
 - 🔄 Script execution history
 - 🔄 Import/export functionality
+
+## Homebrew Distribution
+
+Scripto is distributed via a custom Homebrew tap hosted at [github.com/vsuhanov/homebrew-scripto](https://github.com/vsuhanov/homebrew-scripto).
+
+### Tap structure
+
+The tap repository follows the standard Homebrew naming convention (`homebrew-<tap-name>`) and contains:
+
+```
+Formula/
+  scripto.rb    # Homebrew formula with download URLs and SHA256 checksums
+```
+
+### Formula
+
+The formula (`Formula/scripto.rb`) provides pre-built binaries for:
+- **Apple Silicon (arm64)** — darwin-arm64 tarball
+- **Intel Mac (amd64)** — darwin-amd64 tarball
+
+The formula is updated automatically on every release via the GitHub Actions release workflow (`.github/workflows/release.yml`), which computes the SHA256 checksums of the produced tarballs and commits the updated formula to the tap repository using the `HOMEBREW_TAP_TOKEN` secret.
+
+### Release process
+
+Tagging a new version triggers the workflow:
+1. Builds binaries for both darwin-arm64 and darwin-amd64
+2. Creates tarballs and computes SHA256 checksums
+3. Publishes a GitHub release with all artifacts
+4. Updates `Formula/scripto.rb` in the tap repo with the new version and checksums
 
 # zstyle configuration
 
