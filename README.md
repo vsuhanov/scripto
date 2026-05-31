@@ -11,7 +11,7 @@ Scripto allows you to store command snippets with placeholders, organize them by
 - 🔧 **Inline Editing** - Edit scripts directly in the TUI with form-based popup editor
 - 📝 **External Editor Support** - Open scripts in your preferred editor (vim, nvim, code, etc.)
 - 🔍 **Smart Matching** - Find scripts by name or partial command matching
-- 🏷️ **Placeholder Support** - Use placeholders in scripts for dynamic values
+- 🏷️ **Template Variables** - Use Go template syntax for dynamic values with labels, defaults, and allowed-value hints
 - 🗃️ **Auto-completion** - Shell completion for script names and commands
 - 💾 **File-based Storage** - Scripts stored as individual files with JSON metadata
 - 🔄 **Shell Integration** - Seamlessly execute scripts in your current shell context
@@ -231,9 +231,10 @@ scripto add --global --name "backup" --description "Backup home directory" "tar 
 scripto add --name "build" "go build -o bin/myapp ./cmd/myapp"
 ```
 
-**Add a script with placeholders:**
+**Add a script with template variables:**
 ```bash
-scripto add --name "deploy" --description "Deploy to server" "scp %file:File to deploy% user@%server:Target server%:~/apps/"
+scripto add --name "deploy" --description "Deploy to server" \
+  'scp {{ .File | label "File to deploy" }} user@{{ .Server | label "Target server" }}:~/apps/'
 ```
 
 #### Executing Scripts
@@ -281,19 +282,37 @@ Scripto organizes scripts in three scopes:
 
 Scripts are searched in this priority order: Local → Parent → Global
 
-### Placeholder Support
+### Template Variables
 
-Use placeholders in your scripts for dynamic values:
+Script commands are Go templates. Any `{{ .VarName }}` expression is recognised as a variable — when you execute the script, scripto collects all variables and shows a form where you fill in the values before running.
 
-```bash
-# Placeholder syntax: %variable:description%
-scripto add --name "ssh-connect" "ssh %user:Username%@%host:Hostname%"
-
-# When executed, you'll be prompted:
-# Username: myuser
-# Hostname: myserver.com
-# Final command: ssh myuser@myserver.com
+**Basic variable:**
 ```
+kubectl get pods -n {{ .Namespace }}
+```
+
+**Annotations via pipe functions** control how the form renders each field:
+
+| Pipe | Effect |
+|---|---|
+| `\| label "text"` | Sets the field label shown in the form |
+| `\| defaultValue "val"` | Pre-fills the input with a default |
+| `\| allowedValues "a" "b"` | Shows the allowed options as a hint |
+
+Annotations can be combined in any order:
+
+```
+kubectl rollout restart deploy/{{ .Service | label "Service name" | defaultValue "api" }} \
+  -n {{ .Namespace | label "Namespace" | defaultValue "default" | allowedValues "default" "staging" "prod" }}
+```
+
+**Conditionals** — variables inside `{{ if eq .A .B }}` are also extracted. To annotate individual variables in a condition, use `param` as a delimiter between annotation groups:
+
+```
+{{ if eq .Env .Target | label "Current env" | param .Target | allowedValues "staging" "prod" }}
+```
+
+Here `label "Current env"` applies to `.Env`, and `allowedValues "staging" "prod"` applies to `.Target`.
 
 ### Environment Variables
 
@@ -340,9 +359,9 @@ scripto add --name "test" "go test ./..."
 scripto add --name "build" "go build -o bin/app ./cmd/app"
 scripto add --name "run" "./bin/app"
 
-# Add deployment script with placeholders
+# Add deployment script with template variables
 scripto add --name "deploy" --description "Deploy to environment" \
-  "docker build -t myapp:%version:Version tag% . && docker push myapp:%version% && kubectl set image deployment/myapp myapp=myapp:%version% -n %env:Environment%"
+  'docker build -t myapp:{{ .Version | label "Version tag" }} . && docker push myapp:{{ .Version }} && kubectl set image deployment/myapp myapp=myapp:{{ .Version }} -n {{ .Env | label "Environment" | allowedValues "staging" "prod" }}'
 
 # Use the TUI to manage and execute
 scripto
@@ -369,7 +388,7 @@ scripto add --name "docker-clean" --description "Clean up Docker" \
   "docker system prune -f && docker volume prune -f"
 
 scripto add --name "docker-logs" --description "Follow container logs" \
-  "docker logs -f %container:Container name%"
+  'docker logs -f {{ .Container | label "Container name" }}'
 
 # Execute with TUI
 scripto  # Select docker-logs, enter container name when prompted
