@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"scripto/internal/services"
 	"scripto/internal/templatex"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -20,9 +20,110 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+type selectItem struct{ value string }
+
+func (i selectItem) FilterValue() string { return i.value }
+func (i selectItem) Title() string       { return i.value }
+func (i selectItem) Description() string { return "" }
+
+type fieldControl struct {
+	isSelect bool
+	input    textinput.Model
+	picker   list.Model
+}
+
+func (f fieldControl) Value() string {
+	if f.isSelect {
+		if sel, ok := f.picker.SelectedItem().(selectItem); ok {
+			return sel.value
+		}
+		return ""
+	}
+	return f.input.Value()
+}
+
+func (f *fieldControl) SetValue(v string) {
+	if f.isSelect {
+		items := f.picker.Items()
+		for i, it := range items {
+			if it.(selectItem).value == v {
+				f.picker.Select(i)
+				return
+			}
+		}
+		newItems := make([]list.Item, 0, len(items)+1)
+		newItems = append(newItems, selectItem{value: v})
+		newItems = append(newItems, items...)
+		f.picker.SetItems(newItems)
+		f.picker.Select(0)
+		return
+	}
+	f.input.SetValue(v)
+}
+
+func (f *fieldControl) Focus() tea.Cmd {
+	if f.isSelect {
+		return nil
+	}
+	return f.input.Focus()
+}
+
+func (f *fieldControl) Blur() {
+	if !f.isSelect {
+		f.input.Blur()
+	}
+}
+
+func buildSelectItems(allowedValues []string, defaultValue string) []list.Item {
+	items := make([]list.Item, 0, len(allowedValues))
+	found := false
+	for _, v := range allowedValues {
+		if v == defaultValue {
+			found = true
+		}
+		items = append(items, selectItem{value: v})
+	}
+	if defaultValue != "" && !found {
+		items = append([]list.Item{selectItem{value: defaultValue}}, items...)
+	}
+	return items
+}
+
+func newSelectPicker(meta templatex.VariableMeta) list.Model {
+	items := buildSelectItems(meta.AllowedValues, meta.DefaultValue)
+
+	d := list.NewDefaultDelegate()
+	d.ShowDescription = false
+	d.SetHeight(1)
+	d.SetSpacing(0)
+	d.Styles.NormalTitle = d.Styles.NormalTitle.Foreground(mutedTextColor)
+	d.Styles.SelectedTitle = d.Styles.SelectedTitle.
+		Foreground(selectedTextColor).
+		Background(selectedBgColor).
+		BorderForeground(selectedBgColor)
+
+	picker := list.New(items, d, leftPaneWidth-6, len(items))
+	picker.SetShowTitle(false)
+	picker.SetShowFilter(false)
+	picker.SetShowStatusBar(false)
+	picker.SetShowPagination(false)
+	picker.SetShowHelp(false)
+	picker.DisableQuitKeybindings()
+
+	if meta.DefaultValue != "" {
+		for i, it := range items {
+			if it.(selectItem).value == meta.DefaultValue {
+				picker.Select(i)
+				break
+			}
+		}
+	}
+	return picker
+}
+
 type PlaceholderFormModel struct {
 	placeholders  []templatex.VariableMeta
-	inputs        []textinput.Model
+	fields        []fieldControl
 	focused       int
 	submitted     bool
 	cancelled     bool
@@ -54,13 +155,17 @@ const leftPaneWidth = 54
 
 func NewPlaceholderForm(script *entities.Script, placeholders []templatex.VariableMeta,
 	width, height int, container *services.Container, originalScript string, workingDir string) PlaceholderFormModel {
-	inputs := make([]textinput.Model, len(placeholders))
+	fields := make([]fieldControl, len(placeholders))
 
 	for i, placeholder := range placeholders {
-		input := textinput.New()
-		input.Placeholder = placeholder.DefaultValue
-		input.Width = 50
-		inputs[i] = input
+		if len(placeholder.AllowedValues) > 0 {
+			fields[i] = fieldControl{isSelect: true, picker: newSelectPicker(placeholder)}
+		} else {
+			input := textinput.New()
+			input.Placeholder = placeholder.DefaultValue
+			input.Width = 50
+			fields[i] = fieldControl{isSelect: false, input: input}
+		}
 	}
 
 	wdInput := textinput.New()
@@ -74,8 +179,8 @@ func NewPlaceholderForm(script *entities.Script, placeholders []templatex.Variab
 
 	workingDirFocused := true
 	wdInput.Focus()
-	if len(inputs) > 0 {
-		inputs[0].Focus()
+	if len(fields) > 0 {
+		fields[0].Focus()
 		workingDirFocused = false
 	}
 
@@ -88,7 +193,7 @@ func NewPlaceholderForm(script *entities.Script, placeholders []templatex.Variab
 
 	m := PlaceholderFormModel{
 		placeholders:      placeholders,
-		inputs:            inputs,
+		fields:            fields,
 		focused:           0,
 		values:            make(map[string]string),
 		buttonFocus:       0,
@@ -120,7 +225,7 @@ func (m PlaceholderFormModel) buildPreviewContent(values map[string]string) stri
 func (m PlaceholderFormModel) currentValues() map[string]string {
 	vals := make(map[string]string)
 	for i, placeholder := range m.placeholders {
-		vals[placeholder.Name] = m.inputs[i].Value()
+		vals[placeholder.Name] = m.fields[i].Value()
 	}
 	return vals
 }
@@ -247,16 +352,16 @@ func (m PlaceholderFormModel) buildHistoryTable(records []services.ExecutionReco
 }
 
 func (m *PlaceholderFormModel) saveInputValues() {
-	m.savedInputValues = make([]string, len(m.inputs))
-	for i, input := range m.inputs {
-		m.savedInputValues[i] = input.Value()
+	m.savedInputValues = make([]string, len(m.fields))
+	for i := range m.fields {
+		m.savedInputValues[i] = m.fields[i].Value()
 	}
 }
 
 func (m *PlaceholderFormModel) restoreInputValues() {
-	for i := range m.inputs {
+	for i := range m.fields {
 		if i < len(m.savedInputValues) {
-			m.inputs[i].SetValue(m.savedInputValues[i])
+			m.fields[i].SetValue(m.savedInputValues[i])
 		}
 	}
 	m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
@@ -269,7 +374,7 @@ func (m *PlaceholderFormModel) fillFromSelectedRow() {
 	}
 	r := m.historyRecords[cursor]
 	for i, p := range m.placeholders {
-		m.inputs[i].SetValue(r.PlaceholderValues[p.Name])
+		m.fields[i].SetValue(r.PlaceholderValues[p.Name])
 	}
 	if m.showWorkingDir && r.WorkingDirectory != "" {
 		m.workingDirInput.SetValue(r.WorkingDirectory)
@@ -311,8 +416,8 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.historyFocused = true
 			m.workingDirFocused = false
 			m.workingDirInput.Blur()
-			if len(m.inputs) > 0 {
-				m.inputs[0].Blur()
+			if len(m.fields) > 0 {
+				m.fields[0].Blur()
 			}
 			m.saveInputValues()
 			m.fillFromSelectedRow()
@@ -343,11 +448,13 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFormKey(msg)
 	}
 
-	if !m.historyFocused && !m.workingDirFocused && m.buttonFocus == 0 && len(m.inputs) > 0 {
-		var cmd tea.Cmd
-		m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
-		m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
-		return m, cmd
+	if !m.historyFocused && !m.workingDirFocused && m.buttonFocus == 0 && len(m.fields) > 0 {
+		if !m.fields[m.focused].isSelect {
+			var cmd tea.Cmd
+			m.fields[m.focused].input, cmd = m.fields[m.focused].input.Update(msg)
+			m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
+			return m, cmd
+		}
 	}
 
 	if m.workingDirFocused {
@@ -379,8 +486,8 @@ func (m PlaceholderFormModel) handleHistoryKey(msg tea.KeyMsg) (PlaceholderFormM
 			m.workingDirFocused = true
 			return m, m.workingDirInput.Focus()
 		}
-		if len(m.inputs) > 0 {
-			return m, m.inputs[0].Focus()
+		if len(m.fields) > 0 {
+			return m, m.fields[0].Focus()
 		}
 		m.buttonFocus = 1
 		return m, nil
@@ -403,8 +510,8 @@ func (m PlaceholderFormModel) handleHistoryKey(msg tea.KeyMsg) (PlaceholderFormM
 			m.workingDirFocused = true
 			return m, m.workingDirInput.Focus()
 		}
-		if len(m.inputs) > 0 {
-			return m, m.inputs[0].Focus()
+		if len(m.fields) > 0 {
+			return m, m.fields[0].Focus()
 		}
 		m.buttonFocus = 1
 		return m, nil
@@ -427,10 +534,10 @@ func (m PlaceholderFormModel) handleWorkingDirKey(msg tea.KeyMsg) (PlaceholderFo
 	case "enter":
 		m.workingDirInput.Blur()
 		m.workingDirFocused = false
-		if len(m.inputs) > 0 {
+		if len(m.fields) > 0 {
 			m.focused = 0
 			m.buttonFocus = 0
-			return m, m.inputs[0].Focus()
+			return m, m.fields[0].Focus()
 		}
 		m.buttonFocus = 1
 		return m, nil
@@ -467,10 +574,10 @@ func (m PlaceholderFormModel) handleUseCwdKey(msg tea.KeyMsg) (PlaceholderFormMo
 
 	case "tab", "down":
 		m.useCwdFocused = false
-		if len(m.inputs) > 0 {
+		if len(m.fields) > 0 {
 			m.focused = 0
 			m.buttonFocus = 0
-			return m, m.inputs[0].Focus()
+			return m, m.fields[0].Focus()
 		}
 		m.buttonFocus = 1
 		return m, nil
@@ -484,6 +591,26 @@ func (m PlaceholderFormModel) handleUseCwdKey(msg tea.KeyMsg) (PlaceholderFormMo
 }
 
 func (m PlaceholderFormModel) handleFormKey(msg tea.KeyMsg) (PlaceholderFormModel, tea.Cmd) {
+	if m.buttonFocus == 0 && len(m.fields) > 0 && m.fields[m.focused].isSelect {
+		switch msg.String() {
+		case "j", "down", "l", "ctrl+n":
+			idx := m.fields[m.focused].picker.Index()
+			nitems := len(m.fields[m.focused].picker.Items())
+			if idx < nitems-1 {
+				m.fields[m.focused].picker.Select(idx + 1)
+			}
+			m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
+			return m, nil
+		case "k", "up", "h", "ctrl+p":
+			idx := m.fields[m.focused].picker.Index()
+			if idx > 0 {
+				m.fields[m.focused].picker.Select(idx - 1)
+			}
+			m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
+			return m, nil
+		}
+	}
+
 	switch msg.String() {
 	case "ctrl+c", "esc":
 		m.cancelled = true
@@ -493,7 +620,7 @@ func (m PlaceholderFormModel) handleFormKey(msg tea.KeyMsg) (PlaceholderFormMode
 		if m.buttonFocus == 1 {
 			m.submitted = true
 			for i, placeholder := range m.placeholders {
-				value := m.inputs[i].Value()
+				value := m.fields[i].Value()
 				if value == "" && placeholder.DefaultValue != "" {
 					value = placeholder.DefaultValue
 				}
@@ -506,10 +633,10 @@ func (m PlaceholderFormModel) handleFormKey(msg tea.KeyMsg) (PlaceholderFormMode
 			m.cancelled = true
 			return m, func() tea.Msg { return PlaceholderFormDoneMsg{cancelled: true} }
 		} else {
-			if len(m.inputs) == 0 {
+			if len(m.fields) == 0 {
 				return m, nil
 			}
-			if m.focused == len(m.inputs)-1 {
+			if m.focused == len(m.fields)-1 {
 				return m.nextFocus()
 			}
 			return m.nextInput()
@@ -520,15 +647,15 @@ func (m PlaceholderFormModel) handleFormKey(msg tea.KeyMsg) (PlaceholderFormMode
 
 	case "shift+tab", "up":
 		if m.showWorkingDir && m.buttonFocus == 0 && m.focused == 0 {
-			if len(m.inputs) > 0 {
-				m.inputs[m.focused].Blur()
+			if len(m.fields) > 0 {
+				m.fields[m.focused].Blur()
 			}
 			m.useCwdFocused = true
 			return m, nil
 		}
 		if m.historyLoaded && len(m.historyRecords) > 0 && m.focused == 0 && m.buttonFocus == 0 && !m.showWorkingDir {
-			if len(m.inputs) > 0 {
-				m.inputs[m.focused].Blur()
+			if len(m.fields) > 0 {
+				m.fields[m.focused].Blur()
 			}
 			m.saveInputValues()
 			m.historyFocused = true
@@ -537,9 +664,9 @@ func (m PlaceholderFormModel) handleFormKey(msg tea.KeyMsg) (PlaceholderFormMode
 		return m.prevFocus()
 
 	default:
-		if m.buttonFocus == 0 && len(m.inputs) > 0 {
+		if m.buttonFocus == 0 && len(m.fields) > 0 && !m.fields[m.focused].isSelect {
 			var cmd tea.Cmd
-			m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
+			m.fields[m.focused].input, cmd = m.fields[m.focused].input.Update(msg)
 			m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
 			return m, cmd
 		}
@@ -549,13 +676,13 @@ func (m PlaceholderFormModel) handleFormKey(msg tea.KeyMsg) (PlaceholderFormMode
 
 func (m PlaceholderFormModel) nextFocus() (PlaceholderFormModel, tea.Cmd) {
 	if m.buttonFocus == 0 {
-		if len(m.inputs) > 0 && m.focused < len(m.inputs)-1 {
-			m.inputs[m.focused].Blur()
+		if len(m.fields) > 0 && m.focused < len(m.fields)-1 {
+			m.fields[m.focused].Blur()
 			m.focused++
-			return m, m.inputs[m.focused].Focus()
+			return m, m.fields[m.focused].Focus()
 		} else {
-			if len(m.inputs) > 0 {
-				m.inputs[m.focused].Blur()
+			if len(m.fields) > 0 {
+				m.fields[m.focused].Blur()
 			}
 			m.buttonFocus = 1
 			return m, nil
@@ -569,9 +696,9 @@ func (m PlaceholderFormModel) nextFocus() (PlaceholderFormModel, tea.Cmd) {
 			m.workingDirFocused = true
 			return m, m.workingDirInput.Focus()
 		}
-		if len(m.inputs) > 0 {
+		if len(m.fields) > 0 {
 			m.focused = 0
-			return m, m.inputs[0].Focus()
+			return m, m.fields[0].Focus()
 		}
 		m.buttonFocus = 1
 		return m, nil
@@ -580,13 +707,13 @@ func (m PlaceholderFormModel) nextFocus() (PlaceholderFormModel, tea.Cmd) {
 
 func (m PlaceholderFormModel) prevFocus() (PlaceholderFormModel, tea.Cmd) {
 	if m.buttonFocus == 0 {
-		if len(m.inputs) > 0 && m.focused > 0 {
-			m.inputs[m.focused].Blur()
+		if len(m.fields) > 0 && m.focused > 0 {
+			m.fields[m.focused].Blur()
 			m.focused--
-			return m, m.inputs[m.focused].Focus()
+			return m, m.fields[m.focused].Focus()
 		} else {
-			if len(m.inputs) > 0 {
-				m.inputs[m.focused].Blur()
+			if len(m.fields) > 0 {
+				m.fields[m.focused].Blur()
 			}
 			m.buttonFocus = 2
 			return m, nil
@@ -597,9 +724,9 @@ func (m PlaceholderFormModel) prevFocus() (PlaceholderFormModel, tea.Cmd) {
 	} else {
 		// Execute button → go back to last input, or useCwd, or workingDir
 		m.buttonFocus = 0
-		if len(m.inputs) > 0 {
-			m.focused = len(m.inputs) - 1
-			return m, m.inputs[m.focused].Focus()
+		if len(m.fields) > 0 {
+			m.focused = len(m.fields) - 1
+			return m, m.fields[m.focused].Focus()
 		}
 		if m.showWorkingDir {
 			m.useCwdFocused = true
@@ -611,9 +738,9 @@ func (m PlaceholderFormModel) prevFocus() (PlaceholderFormModel, tea.Cmd) {
 }
 
 func (m PlaceholderFormModel) nextInput() (PlaceholderFormModel, tea.Cmd) {
-	m.inputs[m.focused].Blur()
-	m.focused = (m.focused + 1) % len(m.inputs)
-	return m, m.inputs[m.focused].Focus()
+	m.fields[m.focused].Blur()
+	m.focused = (m.focused + 1) % len(m.fields)
+	return m, m.fields[m.focused].Focus()
 }
 
 func (m PlaceholderFormModel) View() string {
@@ -643,18 +770,19 @@ func (m PlaceholderFormModel) View() string {
 		b.WriteString(FieldLabelStyle.Render(placeholder.Label))
 		b.WriteString("\n")
 
-		if len(placeholder.AllowedValues) > 0 {
-			b.WriteString(" ")
-			b.WriteString(DescriptionStyle.Render(fmt.Sprintf("(%s)", strings.Join(placeholder.AllowedValues, ", "))))
-			b.WriteString("\n")
+		field := m.fields[i]
+		focused := i == m.focused && m.buttonFocus == 0 && !m.historyFocused && !m.workingDirFocused
+
+		fieldStyle := PlaceholderInputStyle
+		if focused {
+			fieldStyle = PlaceholderInputFocusedStyle
 		}
 
-		inputStyle := PlaceholderInputStyle
-		if i == m.focused && m.buttonFocus == 0 && !m.historyFocused && !m.workingDirFocused {
-			inputStyle = PlaceholderInputFocusedStyle
+		if field.isSelect {
+			b.WriteString(fieldStyle.Render(field.picker.View()))
+		} else {
+			b.WriteString(fieldStyle.Render(field.input.View()))
 		}
-
-		b.WriteString(inputStyle.Render(m.inputs[i].View()))
 		b.WriteString("\n")
 	}
 
@@ -683,6 +811,8 @@ func (m PlaceholderFormModel) View() string {
 		instructions = "Tab: use cwd button • Enter: Next • Shift+Tab: Prev • ctrl+u: Use cwd • Esc: Cancel"
 	} else if m.useCwdFocused {
 		instructions = "Enter/Space: Set cwd • Tab: Next • Shift+Tab: Back • Esc: Cancel"
+	} else if m.buttonFocus == 0 && len(m.fields) > 0 && m.fields[m.focused].isSelect {
+		instructions = "j/k: Select • Tab: Next • Shift+Tab: Prev • Enter: Submit • Esc: Cancel"
 	}
 	b.WriteString(InstructionStyle.Render(instructions))
 
