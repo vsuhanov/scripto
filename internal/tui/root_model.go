@@ -50,7 +50,7 @@ type RootModel struct {
 	pendingPlaceholderScript         *entities.Script
 	pendingPlaceholderAction         string
 	pendingPlaceholderOriginalScript string
-	pendingPlaceholderUseScriptDir   bool
+	pendingPlaceholderWorkingDir     string
 	pendingSavedScript               *entities.Script
 	pendingSavedCommand              string
 }
@@ -124,27 +124,18 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case ExecuteScriptMsg:
-		scopeType := getScopeType(msg.script.Scope)
-		if scopeType == "parent" || scopeType == "other" {
-			screen := &ScopeSelectionScreen{script: msg.script, scriptArgs: msg.scriptArgs, width: m.width, height: m.height}
-			m.screenStack = append(m.screenStack, m.currentScreen)
-			m.currentScreen = screen
-			return m, screen.Init()
+		realScope := msg.script.Scope
+		if msg.script.OriginalScope != "" {
+			realScope = msg.script.OriginalScope
 		}
-		return m, m.handleExecuteScript(msg.script, msg.scriptArgs)
-
-	case ShowScopeSelectionMsg:
-		screen := &ScopeSelectionScreen{script: msg.script, scriptArgs: msg.scriptArgs, width: m.width, height: m.height}
-		m.screenStack = append(m.screenStack, m.currentScreen)
-		m.currentScreen = screen
-		return m, screen.Init()
-
-	case ScopeSelectionResultMsg:
-		if len(m.screenStack) > 0 {
-			m.currentScreen = m.screenStack[len(m.screenStack)-1]
-			m.screenStack = m.screenStack[:len(m.screenStack)-1]
+		scopeType := getScopeType(realScope)
+		if scopeType == "local" || scopeType == "global" {
+			return m, m.handleExecuteScript(msg.script, msg.scriptArgs)
 		}
-		return m, m.handleExecuteScriptWithDir(msg.script, msg.scriptArgs, msg.useScriptDir)
+		return m, m.showExecutionForm(msg.script, msg.scriptArgs)
+
+	case ShowScriptExecutionWithWorkingDirMsg:
+		return m, m.showExecutionForm(msg.script, msg.scriptArgs)
 
 	case CopyScriptToClipboardMsg:
 		return m, m.handleCopyScriptToClipboard(msg.script)
@@ -153,8 +144,8 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingPlaceholderScript = msg.script
 		m.pendingPlaceholderAction = msg.action
 		m.pendingPlaceholderOriginalScript = msg.originalScript
-		m.pendingPlaceholderUseScriptDir = msg.useScriptDir
-		form := NewPlaceholderForm(msg.script, msg.placeholders, m.width, m.height, m.container, msg.originalScript)
+		m.pendingPlaceholderWorkingDir = msg.workingDir
+		form := NewPlaceholderForm(msg.script, msg.placeholders, m.width, m.height, m.container, msg.originalScript, msg.workingDir)
 		m.screenStack = append(m.screenStack, m.currentScreen)
 		m.currentScreen = form
 		return m, form.Init()
@@ -168,19 +159,18 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingPlaceholderScript = nil
 			m.pendingPlaceholderAction = ""
 			m.pendingPlaceholderOriginalScript = ""
-			m.pendingPlaceholderUseScriptDir = false
+			m.pendingPlaceholderWorkingDir = ""
 			return m, func() tea.Msg { return StatusMsg("Cancelled") }
 		}
 		script := m.pendingPlaceholderScript
 		action := m.pendingPlaceholderAction
 		originalScript := m.pendingPlaceholderOriginalScript
-		useScriptDir := m.pendingPlaceholderUseScriptDir
 		m.pendingPlaceholderScript = nil
 		m.pendingPlaceholderAction = ""
 		m.pendingPlaceholderOriginalScript = ""
-		m.pendingPlaceholderUseScriptDir = false
+		m.pendingPlaceholderWorkingDir = ""
 		if action == "execute" {
-			return m, m.finalizeExecute(script, msg.values, originalScript, useScriptDir)
+			return m, m.finalizeExecute(script, msg.values, originalScript, msg.workingDir)
 		}
 		return m, m.finalizeCopy(script, msg.values)
 
@@ -277,13 +267,41 @@ func (m RootModel) View() string {
 	return ""
 }
 
-func (m *RootModel) handleExecuteScript(script *entities.Script, scriptArgs []string) tea.Cmd {
-	return m.handleExecuteScriptWithDir(script, scriptArgs, false)
+func scriptDefaultWorkingDir(script *entities.Script) string {
+	cwd, _ := os.Getwd()
+	if script.OriginalScope != "" && script.OriginalScope != "global" {
+		return script.OriginalScope
+	}
+	if script.Scope != "" && script.Scope != "global" && script.Scope != cwd {
+		return script.Scope
+	}
+	return cwd
 }
 
-func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptArgs []string, useScriptDir bool) tea.Cmd {
+func (m *RootModel) showExecutionForm(script *entities.Script, scriptArgs []string) tea.Cmd {
 	return func() tea.Msg {
-		log.Printf("handleExecuteScriptWithDir: scriptID=%q scriptName=%q useScriptDir=%v", script.ID, script.Name, useScriptDir)
+		workingDir := scriptDefaultWorkingDir(script)
+		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, scriptArgs)
+		if err != nil {
+			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
+		}
+		return ShowPlaceholderFormMsg{
+			script:         script,
+			action:         "execute",
+			placeholders:   processingResult.Placeholders,
+			originalScript: processingResult.OriginalScript,
+			workingDir:     workingDir,
+		}
+	}
+}
+
+func (m *RootModel) handleExecuteScript(script *entities.Script, scriptArgs []string) tea.Cmd {
+	return m.handleExecuteScriptWithDir(script, scriptArgs, "")
+}
+
+func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptArgs []string, workingDir string) tea.Cmd {
+	return func() tea.Msg {
+		log.Printf("handleExecuteScriptWithDir: scriptID=%q scriptName=%q workingDir=%q", script.ID, script.Name, workingDir)
 		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, scriptArgs)
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
@@ -295,8 +313,9 @@ func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptAr
 			if err != nil {
 				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
 			}
-			if useScriptDir {
-				finalCommand = "cd " + script.Scope + " && " + finalCommand
+			cwd, _ := os.Getwd()
+			if workingDir != "" && workingDir != cwd {
+				finalCommand = "cd " + shellQuote(workingDir) + " && " + finalCommand
 			}
 			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, nil)
 			log.Printf("handleExecuteScriptWithDir: historyRecord=%v", record != nil)
@@ -306,7 +325,7 @@ func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptAr
 			}
 		}
 
-		return ShowPlaceholderFormMsg{script: script, action: "execute", placeholders: processingResult.Placeholders, originalScript: processingResult.OriginalScript, useScriptDir: useScriptDir}
+		return ShowPlaceholderFormMsg{script: script, action: "execute", placeholders: processingResult.Placeholders, originalScript: processingResult.OriginalScript, workingDir: workingDir}
 	}
 }
 
@@ -330,14 +349,15 @@ func (m *RootModel) handleCopyScriptToClipboard(script *entities.Script) tea.Cmd
 	}
 }
 
-func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]string, originalScript string, useScriptDir bool) tea.Cmd {
+func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]string, originalScript string, workingDir string) tea.Cmd {
 	return func() tea.Msg {
 		finalCommand, err := m.container.ExecutionService.PrepareExecution(script, []string{}, values)
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
 		}
-		if useScriptDir {
-			finalCommand = "cd " + script.Scope + " && " + finalCommand
+		cwd, _ := os.Getwd()
+		if workingDir != "" && workingDir != cwd {
+			finalCommand = "cd " + shellQuote(workingDir) + " && " + finalCommand
 		}
 		record := m.buildHistoryRecord(script, finalCommand, originalScript, values)
 		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand), historyRecord: record}

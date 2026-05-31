@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -18,24 +20,29 @@ import (
 )
 
 type PlaceholderFormModel struct {
-	placeholders   []args.PlaceholderValue
-	inputs         []textinput.Model
-	focused        int
-	submitted      bool
-	cancelled      bool
-	values         map[string]string
-	buttonFocus    int
-	script         *entities.Script
-	viewport       viewport.Model
-	width          int
-	height         int
-	container      *services.Container
+	placeholders  []args.PlaceholderValue
+	inputs        []textinput.Model
+	focused       int
+	submitted     bool
+	cancelled     bool
+	values        map[string]string
+	buttonFocus   int
+	script        *entities.Script
+	viewport      viewport.Model
+	width         int
+	height        int
+	container     *services.Container
 	originalScript string
-	historyRecords []services.ExecutionRecord
-	historyTable      table.Model
-	historyFocused    bool
-	historyLoaded     bool
-	savedInputValues  []string
+	historyRecords   []services.ExecutionRecord
+	historyTable     table.Model
+	historyFocused   bool
+	historyLoaded    bool
+	savedInputValues []string
+
+	showWorkingDir    bool
+	workingDirInput   textinput.Model
+	workingDirFocused bool
+	useCwdFocused     bool
 }
 
 type placeholderHistoryLoadedMsg struct {
@@ -45,19 +52,30 @@ type placeholderHistoryLoadedMsg struct {
 const leftPaneWidth = 54
 
 func NewPlaceholderForm(script *entities.Script, placeholders []args.PlaceholderValue,
-	width, height int, container *services.Container, originalScript string) PlaceholderFormModel {
+	width, height int, container *services.Container, originalScript string, workingDir string) PlaceholderFormModel {
 	inputs := make([]textinput.Model, len(placeholders))
 
 	for i, placeholder := range placeholders {
 		input := textinput.New()
 		input.Placeholder = placeholder.DefaultValue
 		input.Width = 50
-
-		if i == 0 {
-			input.Focus()
-		}
-
 		inputs[i] = input
+	}
+
+	wdInput := textinput.New()
+	wdInput.Placeholder = "working directory..."
+	wdInput.Width = leftPaneWidth - 20
+
+	if workingDir == "" {
+		workingDir, _ = os.Getwd()
+	}
+	wdInput.SetValue(workingDir)
+
+	workingDirFocused := true
+	wdInput.Focus()
+	if len(inputs) > 0 {
+		inputs[0].Focus()
+		workingDirFocused = false
 	}
 
 	rightPaneWidth := width - leftPaneWidth - 2
@@ -68,19 +86,22 @@ func NewPlaceholderForm(script *entities.Script, placeholders []args.Placeholder
 	vpHeight := max(5, height-6)
 
 	m := PlaceholderFormModel{
-		placeholders:   placeholders,
-		inputs:         inputs,
-		focused:        0,
-		values:         make(map[string]string),
-		buttonFocus:    0,
-		script:         script,
-		viewport:       viewport.New(vpWidth, vpHeight),
-		width:          width,
-		height:         height,
-		container:      container,
-		originalScript: originalScript,
-		historyFocused: false,
-		historyLoaded:  false,
+		placeholders:      placeholders,
+		inputs:            inputs,
+		focused:           0,
+		values:            make(map[string]string),
+		buttonFocus:       0,
+		script:            script,
+		viewport:          viewport.New(vpWidth, vpHeight),
+		width:             width,
+		height:            height,
+		container:         container,
+		originalScript:    originalScript,
+		historyFocused:    false,
+		historyLoaded:     false,
+		showWorkingDir:    true,
+		workingDirInput:   wdInput,
+		workingDirFocused: workingDirFocused,
 	}
 
 	log.Printf("PlaceholderForm Init - Width: %d, Height: %d, RightPaneWidth: %d, ViewportWidth: %d, ViewportHeight: %d", width, height, rightPaneWidth, vpWidth, vpHeight)
@@ -116,6 +137,9 @@ func (m PlaceholderFormModel) loadHistory() tea.Cmd {
 		if err != nil {
 			return placeholderHistoryLoadedMsg{records: nil}
 		}
+		if len(m.placeholders) == 0 {
+			return placeholderHistoryLoadedMsg{records: records}
+		}
 		seen := map[string]bool{}
 		filtered := records[:0]
 		for _, r := range records {
@@ -136,6 +160,10 @@ func (m PlaceholderFormModel) loadHistory() tea.Cmd {
 
 func (m PlaceholderFormModel) buildHistoryTable(records []services.ExecutionRecord, width int) table.Model {
 	timeWidth := 17
+	wdWidth := 0
+	if m.showWorkingDir {
+		wdWidth = 15
+	}
 
 	placeholderWidths := make([]int, len(m.placeholders))
 	for i, p := range m.placeholders {
@@ -150,24 +178,42 @@ func (m PlaceholderFormModel) buildHistoryTable(records []services.ExecutionReco
 	}
 
 	cols := []table.Column{{Title: "Time", Width: timeWidth}}
+	if m.showWorkingDir {
+		cols = append(cols, table.Column{Title: "Working Dir", Width: wdWidth})
+	}
 	for i, p := range m.placeholders {
 		cols = append(cols, table.Column{Title: p.Name, Width: placeholderWidths[i] + 2})
 	}
 
-	usedWidth := (timeWidth + 2)
+	usedWidth := timeWidth + 2 + wdWidth
+	if wdWidth > 0 {
+		usedWidth += 2
+	}
 	for i := range m.placeholders {
 		usedWidth += placeholderWidths[i] + 2 + 2
 	}
-	if fillerWidth := width - usedWidth; fillerWidth > 0 {
+	hasFiller := false
+	if fillerWidth := width - usedWidth - 2; fillerWidth > 0 {
 		cols = append(cols, table.Column{Title: "", Width: fillerWidth})
+		hasFiller = true
 	}
 
 	rows := make([]table.Row, len(records))
 	for i, r := range records {
 		ts := time.Unix(r.ExecutionTimestamp, 0).Format("2006-01-02 15:04")
 		row := table.Row{ts}
+		if m.showWorkingDir {
+			wd := filepath.Base(r.WorkingDirectory)
+			if len(wd) > wdWidth {
+				wd = wd[:wdWidth-1] + "…"
+			}
+			row = append(row, wd)
+		}
 		for _, p := range m.placeholders {
 			row = append(row, r.PlaceholderValues[p.Name])
+		}
+		if hasFiller {
+			row = append(row, "")
 		}
 		rows[i] = row
 	}
@@ -216,15 +262,16 @@ func (m *PlaceholderFormModel) restoreInputValues() {
 }
 
 func (m *PlaceholderFormModel) fillFromSelectedRow() {
-	row := m.historyTable.SelectedRow()
-	if row == nil || len(row) < 1 {
+	cursor := m.historyTable.Cursor()
+	if cursor >= len(m.historyRecords) {
 		return
 	}
-	for i := range m.placeholders {
-		colIdx := i + 1
-		if colIdx < len(row) {
-			m.inputs[i].SetValue(row[colIdx])
-		}
+	r := m.historyRecords[cursor]
+	for i, p := range m.placeholders {
+		m.inputs[i].SetValue(r.PlaceholderValues[p.Name])
+	}
+	if m.showWorkingDir && r.WorkingDirectory != "" {
+		m.workingDirInput.SetValue(r.WorkingDirectory)
 	}
 	m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
 }
@@ -261,7 +308,11 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.historyRecords = msg.records
 			m.historyTable = m.buildHistoryTable(msg.records, m.width-4)
 			m.historyFocused = true
-			m.inputs[0].Blur()
+			m.workingDirFocused = false
+			m.workingDirInput.Blur()
+			if len(m.inputs) > 0 {
+				m.inputs[0].Blur()
+			}
 			m.saveInputValues()
 			m.fillFromSelectedRow()
 			vpHeight := max(5, m.height-6-m.tableHeight())
@@ -270,93 +321,290 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		if m.historyFocused {
-			switch msg.String() {
-			case "ctrl+c", "esc":
-				m.cancelled = true
-				return m, func() tea.Msg { return PlaceholderFormDoneMsg{cancelled: true} }
-
-			case "j", "down", "k", "up":
-				var cmd tea.Cmd
-				m.historyTable, cmd = m.historyTable.Update(msg)
-				m.fillFromSelectedRow()
-				return m, cmd
-
-			case "enter":
-				m.fillFromSelectedRow()
-				m.saveInputValues()
-				m.historyFocused = false
-				return m, m.inputs[0].Focus()
-
-			case "x":
-				m.fillFromSelectedRow()
-				values := m.currentValues()
-				for _, placeholder := range m.placeholders {
-					if values[placeholder.Name] == "" && placeholder.DefaultValue != "" {
-						values[placeholder.Name] = placeholder.DefaultValue
-					}
-				}
-				return m, func() tea.Msg { return PlaceholderFormDoneMsg{values: values} }
-
-			case "tab":
-				m.restoreInputValues()
-				m.historyFocused = false
-				return m, m.inputs[0].Focus()
-			}
+		if msg.String() == "ctrl+u" && m.showWorkingDir {
+			cwd, _ := os.Getwd()
+			m.workingDirInput.SetValue(cwd)
 			return m, nil
 		}
 
-		switch msg.String() {
-		case "ctrl+c", "esc":
-			m.cancelled = true
-			return m, func() tea.Msg { return PlaceholderFormDoneMsg{cancelled: true} }
-
-		case "enter":
-			if m.buttonFocus == 1 {
-				m.submitted = true
-
-				for i, placeholder := range m.placeholders {
-					value := m.inputs[i].Value()
-					if value == "" && placeholder.DefaultValue != "" {
-						value = placeholder.DefaultValue
-					}
-					m.values[placeholder.Name] = value
-				}
-
-				values := m.values
-				return m, func() tea.Msg { return PlaceholderFormDoneMsg{values: values} }
-			} else if m.buttonFocus == 2 {
-				m.cancelled = true
-				return m, func() tea.Msg { return PlaceholderFormDoneMsg{cancelled: true} }
-			} else {
-				if m.focused == len(m.inputs)-1 {
-					return m.nextFocus()
-				}
-				return m.nextInput()
-			}
-
-		case "tab", "down":
-			return m.nextFocus()
-
-		case "shift+tab", "up":
-			if m.historyLoaded && len(m.historyRecords) > 0 && m.focused == 0 && m.buttonFocus == 0 {
-				m.inputs[m.focused].Blur()
-				m.saveInputValues()
-				m.historyFocused = true
-				return m, nil
-			}
-			return m.prevFocus()
+		if m.historyFocused {
+			return m.handleHistoryKey(msg)
 		}
+
+		if m.workingDirFocused {
+			return m.handleWorkingDirKey(msg)
+		}
+
+		if m.useCwdFocused {
+			return m.handleUseCwdKey(msg)
+		}
+
+		return m.handleFormKey(msg)
 	}
 
-	if !m.historyFocused && m.buttonFocus == 0 {
+	if !m.historyFocused && !m.workingDirFocused && m.buttonFocus == 0 && len(m.inputs) > 0 {
 		var cmd tea.Cmd
 		m.inputs[m.focused], cmd = m.inputs[m.focused].Update(msg)
 		m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
 		return m, cmd
 	}
 
+	if m.workingDirFocused {
+		var cmd tea.Cmd
+		m.workingDirInput, cmd = m.workingDirInput.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
+}
+
+func (m PlaceholderFormModel) handleHistoryKey(msg tea.KeyMsg) (PlaceholderFormModel, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "esc":
+		m.cancelled = true
+		return m, func() tea.Msg { return PlaceholderFormDoneMsg{cancelled: true} }
+
+	case "j", "down", "k", "up":
+		var cmd tea.Cmd
+		m.historyTable, cmd = m.historyTable.Update(msg)
+		m.fillFromSelectedRow()
+		return m, cmd
+
+	case "enter":
+		m.fillFromSelectedRow()
+		m.saveInputValues()
+		m.historyFocused = false
+		if m.showWorkingDir {
+			m.workingDirFocused = true
+			return m, m.workingDirInput.Focus()
+		}
+		if len(m.inputs) > 0 {
+			return m, m.inputs[0].Focus()
+		}
+		m.buttonFocus = 1
+		return m, nil
+
+	case "x":
+		m.fillFromSelectedRow()
+		values := m.currentValues()
+		for _, placeholder := range m.placeholders {
+			if values[placeholder.Name] == "" && placeholder.DefaultValue != "" {
+				values[placeholder.Name] = placeholder.DefaultValue
+			}
+		}
+		workingDir := m.workingDirInput.Value()
+		return m, func() tea.Msg { return PlaceholderFormDoneMsg{values: values, workingDir: workingDir} }
+
+	case "tab":
+		m.restoreInputValues()
+		m.historyFocused = false
+		if m.showWorkingDir {
+			m.workingDirFocused = true
+			return m, m.workingDirInput.Focus()
+		}
+		if len(m.inputs) > 0 {
+			return m, m.inputs[0].Focus()
+		}
+		m.buttonFocus = 1
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m PlaceholderFormModel) handleWorkingDirKey(msg tea.KeyMsg) (PlaceholderFormModel, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "esc":
+		m.cancelled = true
+		return m, func() tea.Msg { return PlaceholderFormDoneMsg{cancelled: true} }
+
+	case "tab", "down":
+		m.workingDirInput.Blur()
+		m.workingDirFocused = false
+		m.useCwdFocused = true
+		return m, nil
+
+	case "enter":
+		m.workingDirInput.Blur()
+		m.workingDirFocused = false
+		if len(m.inputs) > 0 {
+			m.focused = 0
+			m.buttonFocus = 0
+			return m, m.inputs[0].Focus()
+		}
+		m.buttonFocus = 1
+		return m, nil
+
+	case "shift+tab", "up":
+		m.workingDirInput.Blur()
+		m.workingDirFocused = false
+		if m.historyLoaded && len(m.historyRecords) > 0 {
+			m.historyFocused = true
+			return m, nil
+		}
+		m.buttonFocus = 2
+		return m, nil
+
+	default:
+		var cmd tea.Cmd
+		m.workingDirInput, cmd = m.workingDirInput.Update(msg)
+		return m, cmd
+	}
+}
+
+func (m PlaceholderFormModel) handleUseCwdKey(msg tea.KeyMsg) (PlaceholderFormModel, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "esc":
+		m.cancelled = true
+		return m, func() tea.Msg { return PlaceholderFormDoneMsg{cancelled: true} }
+
+	case "enter", " ":
+		cwd, _ := os.Getwd()
+		m.workingDirInput.SetValue(cwd)
+		m.useCwdFocused = false
+		m.workingDirFocused = true
+		return m, m.workingDirInput.Focus()
+
+	case "tab", "down":
+		m.useCwdFocused = false
+		if len(m.inputs) > 0 {
+			m.focused = 0
+			m.buttonFocus = 0
+			return m, m.inputs[0].Focus()
+		}
+		m.buttonFocus = 1
+		return m, nil
+
+	case "shift+tab", "up":
+		m.useCwdFocused = false
+		m.workingDirFocused = true
+		return m, m.workingDirInput.Focus()
+	}
+	return m, nil
+}
+
+func (m PlaceholderFormModel) handleFormKey(msg tea.KeyMsg) (PlaceholderFormModel, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "esc":
+		m.cancelled = true
+		return m, func() tea.Msg { return PlaceholderFormDoneMsg{cancelled: true} }
+
+	case "enter":
+		if m.buttonFocus == 1 {
+			m.submitted = true
+			for i, placeholder := range m.placeholders {
+				value := m.inputs[i].Value()
+				if value == "" && placeholder.DefaultValue != "" {
+					value = placeholder.DefaultValue
+				}
+				m.values[placeholder.Name] = value
+			}
+			values := m.values
+			workingDir := m.workingDirInput.Value()
+			return m, func() tea.Msg { return PlaceholderFormDoneMsg{values: values, workingDir: workingDir} }
+		} else if m.buttonFocus == 2 {
+			m.cancelled = true
+			return m, func() tea.Msg { return PlaceholderFormDoneMsg{cancelled: true} }
+		} else {
+			if len(m.inputs) == 0 {
+				return m, nil
+			}
+			if m.focused == len(m.inputs)-1 {
+				return m.nextFocus()
+			}
+			return m.nextInput()
+		}
+
+	case "tab", "down":
+		return m.nextFocus()
+
+	case "shift+tab", "up":
+		if m.showWorkingDir && m.buttonFocus == 0 && m.focused == 0 {
+			if len(m.inputs) > 0 {
+				m.inputs[m.focused].Blur()
+			}
+			m.useCwdFocused = true
+			return m, nil
+		}
+		if m.historyLoaded && len(m.historyRecords) > 0 && m.focused == 0 && m.buttonFocus == 0 && !m.showWorkingDir {
+			if len(m.inputs) > 0 {
+				m.inputs[m.focused].Blur()
+			}
+			m.saveInputValues()
+			m.historyFocused = true
+			return m, nil
+		}
+		return m.prevFocus()
+	}
+	return m, nil
+}
+
+func (m PlaceholderFormModel) nextFocus() (PlaceholderFormModel, tea.Cmd) {
+	if m.buttonFocus == 0 {
+		if len(m.inputs) > 0 && m.focused < len(m.inputs)-1 {
+			m.inputs[m.focused].Blur()
+			m.focused++
+			return m, m.inputs[m.focused].Focus()
+		} else {
+			if len(m.inputs) > 0 {
+				m.inputs[m.focused].Blur()
+			}
+			m.buttonFocus = 1
+			return m, nil
+		}
+	} else if m.buttonFocus == 1 {
+		m.buttonFocus = 2
+		return m, nil
+	} else {
+		m.buttonFocus = 0
+		if m.showWorkingDir {
+			m.workingDirFocused = true
+			return m, m.workingDirInput.Focus()
+		}
+		if len(m.inputs) > 0 {
+			m.focused = 0
+			return m, m.inputs[0].Focus()
+		}
+		m.buttonFocus = 1
+		return m, nil
+	}
+}
+
+func (m PlaceholderFormModel) prevFocus() (PlaceholderFormModel, tea.Cmd) {
+	if m.buttonFocus == 0 {
+		if len(m.inputs) > 0 && m.focused > 0 {
+			m.inputs[m.focused].Blur()
+			m.focused--
+			return m, m.inputs[m.focused].Focus()
+		} else {
+			if len(m.inputs) > 0 {
+				m.inputs[m.focused].Blur()
+			}
+			m.buttonFocus = 2
+			return m, nil
+		}
+	} else if m.buttonFocus == 2 {
+		m.buttonFocus = 1
+		return m, nil
+	} else {
+		// Execute button → go back to last input, or useCwd, or workingDir
+		m.buttonFocus = 0
+		if len(m.inputs) > 0 {
+			m.focused = len(m.inputs) - 1
+			return m, m.inputs[m.focused].Focus()
+		}
+		if m.showWorkingDir {
+			m.useCwdFocused = true
+			return m, nil
+		}
+		m.buttonFocus = 2
+		return m, nil
+	}
+}
+
+func (m PlaceholderFormModel) nextInput() (PlaceholderFormModel, tea.Cmd) {
+	m.inputs[m.focused].Blur()
+	m.focused = (m.focused + 1) % len(m.inputs)
+	return m, m.inputs[m.focused].Focus()
 }
 
 func (m PlaceholderFormModel) View() string {
@@ -368,6 +616,19 @@ func (m PlaceholderFormModel) View() string {
 
 	b.WriteString(FormTitleStyle.Render("Enter Placeholder Values"))
 	b.WriteString("\n\n")
+
+	if m.showWorkingDir {
+		b.WriteString(FieldLabelStyle.Render("Working Dir"))
+		b.WriteString("\n")
+		cwdBtnStyle := PrimaryButtonStyle.Margin(0)
+		if m.useCwdFocused {
+			cwdBtnStyle = PrimaryButtonFocusedStyle.Margin(0)
+		}
+		b.WriteString(m.workingDirInput.View())
+		b.WriteString("  ")
+		b.WriteString(cwdBtnStyle.Render("use cwd"))
+		b.WriteString("\n\n")
+	}
 
 	for i, placeholder := range m.placeholders {
 		label := placeholder.Name
@@ -391,7 +652,7 @@ func (m PlaceholderFormModel) View() string {
 		}
 
 		inputStyle := PlaceholderInputStyle
-		if i == m.focused && m.buttonFocus == 0 && !m.historyFocused {
+		if i == m.focused && m.buttonFocus == 0 && !m.historyFocused && !m.workingDirFocused {
 			inputStyle = PlaceholderInputFocusedStyle
 		}
 
@@ -417,9 +678,13 @@ func (m PlaceholderFormModel) View() string {
 	b.WriteString(buttonsRow)
 	b.WriteString("\n\n")
 
-	instructions := "Tab/↓: Next • Shift+Tab/↑: Previous • Enter: Activate • Esc: Cancel"
+	instructions := "Tab/↓: Next • Shift+Tab/↑: Prev • Enter: Activate • Esc: Cancel"
 	if m.historyFocused {
-		instructions = "j/k: Navigate • Enter: Edit values • x: Execute • Esc: Cancel"
+		instructions = "j/k: Navigate • Enter: Edit • x: Execute • Esc: Cancel"
+	} else if m.workingDirFocused {
+		instructions = "Tab: use cwd button • Enter: Next • Shift+Tab: Prev • ctrl+u: Use cwd • Esc: Cancel"
+	} else if m.useCwdFocused {
+		instructions = "Enter/Space: Set cwd • Tab: Next • Shift+Tab: Back • Esc: Cancel"
 	}
 	b.WriteString(InstructionStyle.Render(instructions))
 
@@ -445,52 +710,4 @@ func (m PlaceholderFormModel) View() string {
 	}
 
 	return formRow
-}
-
-func (m PlaceholderFormModel) nextFocus() (PlaceholderFormModel, tea.Cmd) {
-	if m.buttonFocus == 0 {
-		if m.focused < len(m.inputs)-1 {
-			m.inputs[m.focused].Blur()
-			m.focused++
-			return m, m.inputs[m.focused].Focus()
-		} else {
-			m.inputs[m.focused].Blur()
-			m.buttonFocus = 1
-			return m, nil
-		}
-	} else if m.buttonFocus == 1 {
-		m.buttonFocus = 2
-		return m, nil
-	} else {
-		m.buttonFocus = 0
-		m.focused = 0
-		return m, m.inputs[m.focused].Focus()
-	}
-}
-
-func (m PlaceholderFormModel) prevFocus() (PlaceholderFormModel, tea.Cmd) {
-	if m.buttonFocus == 0 {
-		if m.focused > 0 {
-			m.inputs[m.focused].Blur()
-			m.focused--
-			return m, m.inputs[m.focused].Focus()
-		} else {
-			m.inputs[m.focused].Blur()
-			m.buttonFocus = 2
-			return m, nil
-		}
-	} else if m.buttonFocus == 2 {
-		m.buttonFocus = 1
-		return m, nil
-	} else {
-		m.buttonFocus = 0
-		m.focused = len(m.inputs) - 1
-		return m, m.inputs[m.focused].Focus()
-	}
-}
-
-func (m PlaceholderFormModel) nextInput() (PlaceholderFormModel, tea.Cmd) {
-	m.inputs[m.focused].Blur()
-	m.focused = (m.focused + 1) % len(m.inputs)
-	return m, m.inputs[m.focused].Focus()
 }

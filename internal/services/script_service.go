@@ -379,8 +379,6 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 		return nil, err
 	}
 
-	seen := make(map[string]bool)
-
 	if scripts, exists := s.config[cwd]; exists {
 		for _, scriptEnt := range scripts {
 			if scriptEnt.Archived {
@@ -389,30 +387,6 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 			scriptEnt.Scope = cwd
 			results = append(results, scriptEnt)
 		}
-		seen[cwd] = true
-	}
-
-	dir := cwd
-	for {
-		parent := filepath.Dir(dir)
-		if parent == dir || parent == "/" {
-			break // Reached root
-		}
-
-		if !seen[parent] {
-			if scripts, exists := s.config[parent]; exists {
-				for _, scriptEnt := range scripts {
-					if scriptEnt.Archived {
-						continue
-					}
-					scriptEnt.Scope = parent
-					results = append(results, scriptEnt)
-				}
-			}
-			seen[parent] = true
-		}
-
-		dir = parent
 	}
 
 	if scripts, exists := s.config["global"]; exists {
@@ -425,6 +399,25 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 		}
 	}
 
+	return results, nil
+}
+
+func (s *ScriptService) FindContextualScripts(contextualIDs map[string]bool, cwd string, alreadyInHierarchy map[string]bool) ([]*entities.Script, error) {
+	var results []*entities.Script
+	for scope, scripts := range s.config {
+		if scope == "global" || alreadyInHierarchy[scope] {
+			continue
+		}
+		for _, scriptEnt := range scripts {
+			if scriptEnt.Archived || !contextualIDs[scriptEnt.ID] {
+				continue
+			}
+			copied := *scriptEnt
+			copied.OriginalScope = scope
+			copied.Scope = cwd
+			results = append(results, &copied)
+		}
+	}
 	return results, nil
 }
 

@@ -105,15 +105,9 @@ type PendingExecutionHistoryRecord struct {
 	record services.ExecutionRecord
 }
 
-type ShowScopeSelectionMsg struct {
+type ShowScriptExecutionWithWorkingDirMsg struct {
 	script     *entities.Script
 	scriptArgs []string
-}
-
-type ScopeSelectionResultMsg struct {
-	script       *entities.Script
-	scriptArgs   []string
-	useScriptDir bool
 }
 
 type ShowPlaceholderFormMsg struct {
@@ -121,12 +115,13 @@ type ShowPlaceholderFormMsg struct {
 	action         string
 	placeholders   []args.PlaceholderValue
 	originalScript string
-	useScriptDir   bool
+	workingDir     string
 }
 
 type PlaceholderFormDoneMsg struct {
-	values    map[string]string
-	cancelled bool
+	values     map[string]string
+	workingDir string
+	cancelled  bool
 }
 
 type ScriptEditorResult struct {

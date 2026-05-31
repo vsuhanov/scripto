@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -199,6 +200,26 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))
 		}
 
+		cwd, _ := os.Getwd()
+
+		var contextualScripts []*entities.Script
+		if m.container.ExecutionHistoryService != nil && cwd != "" {
+			ids, err := m.container.ExecutionHistoryService.GetScriptIDsRunFromDirectory(cwd)
+			if err == nil && len(ids) > 0 {
+				alreadyInHierarchy := map[string]bool{cwd: true}
+				contextualIDMap := map[string]bool{}
+				for _, id := range ids {
+					contextualIDMap[id] = true
+				}
+				for _, s := range scripts {
+					delete(contextualIDMap, s.ID)
+				}
+				if len(contextualIDMap) > 0 {
+					contextualScripts, _ = m.container.ScriptService.FindContextualScripts(contextualIDMap, cwd, alreadyInHierarchy)
+				}
+			}
+		}
+
 		allScripts, err := m.container.ScriptService.FindAllScopesScripts()
 		if err != nil {
 			allScripts = scripts
@@ -222,7 +243,13 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 			frecencyScores = map[string]float64{}
 		}
 
-		return scriptsWithStatsMsg{scripts: scripts, allScripts: allScripts, archivedScripts: archivedScripts, stats: stats, frecencyScores: frecencyScores}
+		return scriptsWithStatsMsg{
+			scripts:         append(scripts, contextualScripts...),
+			allScripts:      append(allScripts, contextualScripts...),
+			archivedScripts: archivedScripts,
+			stats:           stats,
+			frecencyScores:  frecencyScores,
+		}
 	}
 }
 
@@ -608,6 +635,15 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "\\":
 		m.searchMode = true
 		m.searchInput.Focus()
+		return m, nil
+
+	case "x":
+		if m.selectedScript != nil {
+			script := m.selectedScript
+			return m, func() tea.Msg {
+				return ShowScriptExecutionWithWorkingDirMsg{script: script}
+			}
+		}
 		return m, nil
 
 	case "H":

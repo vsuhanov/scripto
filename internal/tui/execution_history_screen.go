@@ -18,17 +18,17 @@ import (
 const historyPageSize = 50
 
 type ExecutionHistoryScreen struct {
-	container   *services.Container
-	scriptID    string
-	records     []services.ExecutionRecord
-	filter      string
-	offset      int
-	width       int
-	height      int
-	ready       bool
-	err         error
-	table       table.Model
-	detailVP    viewport.Model
+	container *services.Container
+	scriptID  string
+	records   []services.ExecutionRecord
+	filter    string
+	offset    int
+	width     int
+	height    int
+	ready     bool
+	err       error
+	table     table.Model
+	detailVP  viewport.Model
 	detailReady bool
 }
 

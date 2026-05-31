@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"scripto/entities"
 	"scripto/internal/tui/colors"
 )
 
@@ -82,6 +83,10 @@ var (
 
 	ScopeGlobalStyle = lipgloss.NewStyle().
 				Foreground(colors.ScopeGlobal).
+				Bold(true)
+
+	ScopeContextualStyle = lipgloss.NewStyle().
+				Foreground(warningColor).
 				Bold(true)
 
 	// Help text styles
@@ -283,6 +288,8 @@ func GetScopeStyle(scope string) lipgloss.Style {
 		return ScopeParentStyle
 	case "global":
 		return ScopeGlobalStyle
+	case "contextual":
+		return ScopeContextualStyle
 	default:
 		return ItemStyle
 	}
@@ -298,9 +305,18 @@ func FormatScopeIndicator(scope string) string {
 		return style.Render("◐")
 	case "global":
 		return style.Render("○")
+	case "contextual":
+		return style.Render("◆")
 	default:
 		return "●"
 	}
+}
+
+func FormatScriptScopeIndicator(script entities.Script) string {
+	if script.OriginalScope != "" {
+		return ScopeContextualStyle.Render("◆")
+	}
+	return FormatScopeIndicator(script.Scope)
 }
 
 func GetScopeColorHex(scope string) string {

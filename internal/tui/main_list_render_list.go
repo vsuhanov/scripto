@@ -99,7 +99,7 @@ func (m *MainListScreen) renderList(maxWidth, maxHeight int) string {
 func (m *MainListScreen) formatScriptItem(script entities.Script, index int, maxWidth int, indent int) string {
 	var parts []string
 
-	scopeIndicator := FormatScopeIndicator(script.Scope)
+	scopeIndicator := FormatScriptScopeIndicator(script)
 	parts = append(parts, scopeIndicator)
 
 	var displayName string

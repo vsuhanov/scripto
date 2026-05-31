@@ -197,6 +197,26 @@ func (s *ExecutionHistoryService) GetHistory(filter string, limit, offset int) (
 	return scanExecutionRecords(rows)
 }
 
+func (s *ExecutionHistoryService) GetScriptIDsRunFromDirectory(dir string) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT script_id FROM execution_history WHERE working_directory = ?`,
+		dir,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 func (s *ExecutionHistoryService) GetScriptHistory(scriptID string, limit int) ([]ExecutionRecord, error) {
 	rows, err := s.db.Query(
 		`SELECT id, execution_timestamp, script_id, executed_script, original_script, placeholder_values, working_directory, script_object_definition, executed_script_hash, original_script_hash
