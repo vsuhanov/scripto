@@ -3,7 +3,7 @@ package tui
 import (
 	"fmt"
 	"log"
-	"scripto/internal/services"
+	"github.com/vsuhanov/scripto/internal/services"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"

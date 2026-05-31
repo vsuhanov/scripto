@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"scripto/entities"
-	"scripto/internal/templatex"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/templatex"
 )
 
 type ProcessResult struct {

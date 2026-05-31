@@ -11,11 +11,11 @@ import (
 	"strings"
 	"text/template"
 
-	"scripto/entities"
-	"scripto/internal/services"
-	"scripto/internal/storage"
-	"scripto/internal/tui"
-	"scripto/internal/tui/colors"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/services"
+	"github.com/vsuhanov/scripto/internal/storage"
+	"github.com/vsuhanov/scripto/internal/tui"
+	"github.com/vsuhanov/scripto/internal/tui/colors"
 
 	"github.com/charmbracelet/lipgloss"
 	xterm "github.com/charmbracelet/x/term"

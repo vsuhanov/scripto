@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"scripto/entities"
-	"scripto/internal/args"
-	"scripto/internal/services"
-	"scripto/internal/templatex"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/args"
+	"github.com/vsuhanov/scripto/internal/services"
+	"github.com/vsuhanov/scripto/internal/templatex"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/table"

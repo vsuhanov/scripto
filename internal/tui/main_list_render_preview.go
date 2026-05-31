@@ -9,9 +9,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"scripto/entities"
-	. "scripto/internal/utils"
-	"scripto/internal/tui/colors"
+	"github.com/vsuhanov/scripto/entities"
+	. "github.com/vsuhanov/scripto/internal/utils"
+	"github.com/vsuhanov/scripto/internal/tui/colors"
 )
 
 func (m *MainListScreen) renderPreview(maxWidth, maxHeight int) string {

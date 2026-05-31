@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"scripto/internal/tui/colors"
-	"scripto/internal/utils"
+	"github.com/vsuhanov/scripto/internal/tui/colors"
+	"github.com/vsuhanov/scripto/internal/utils"
 
 	"github.com/charmbracelet/lipgloss"
 	xterm "github.com/charmbracelet/x/term"

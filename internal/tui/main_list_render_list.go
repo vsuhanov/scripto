@@ -2,9 +2,9 @@ package tui
 
 import (
 	"log"
-	"scripto/entities"
-	"scripto/internal/tui/colors"
-	"scripto/internal/utils"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/tui/colors"
+	"github.com/vsuhanov/scripto/internal/utils"
 	"strings"
 	"unicode/utf8"
 

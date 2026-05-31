@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"scripto/entities"
-	"scripto/internal/storage"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/storage"
 )
 
 type ScriptStats struct {

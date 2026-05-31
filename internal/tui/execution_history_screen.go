@@ -12,7 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"scripto/internal/services"
+	"github.com/vsuhanov/scripto/internal/services"
 )
 
 const historyPageSize = 50

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"scripto/entities"
-	"scripto/internal/storage"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/storage"
 )
 
 type ScriptMatcher struct {

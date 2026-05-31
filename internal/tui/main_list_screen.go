@@ -14,9 +14,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"scripto/entities"
-	"scripto/internal/services"
-	"scripto/internal/storage"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/services"
+	"github.com/vsuhanov/scripto/internal/storage"
 )
 
 const (

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"scripto/entities"
+	"github.com/vsuhanov/scripto/entities"
 )
 
 const (

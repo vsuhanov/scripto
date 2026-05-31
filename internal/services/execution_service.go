@@ -3,8 +3,8 @@ package services
 import (
 	"fmt"
 	"os"
-	"scripto/entities"
-	"scripto/internal/templatex"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/templatex"
 	"strings"
 )
 

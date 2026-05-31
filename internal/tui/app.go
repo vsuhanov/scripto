@@ -5,7 +5,7 @@ import (
 	"log"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"scripto/internal/services"
+	"github.com/vsuhanov/scripto/internal/services"
 )
 
 func RunApp(container *services.Container, request TuiRequest) error {

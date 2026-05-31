@@ -8,8 +8,8 @@ import (
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
-	"scripto/entities"
-	"scripto/internal/services"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/services"
 )
 
 type TuiRequest interface {

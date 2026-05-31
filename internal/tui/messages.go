@@ -4,9 +4,9 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"scripto/entities"
-	"scripto/internal/services"
-	"scripto/internal/templatex"
+	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/services"
+	"github.com/vsuhanov/scripto/internal/templatex"
 )
 
 const (

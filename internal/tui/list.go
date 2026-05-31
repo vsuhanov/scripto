@@ -3,7 +3,7 @@ package tui
 // import (
 // 	"strings"
 
-// 	"scripto/internal/script"
+// 	"github.com/vsuhanov/scripto/internal/script"
 // )
 
 // renderList renders the script list pane

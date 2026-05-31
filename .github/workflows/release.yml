@@ -11,29 +11,29 @@ permissions:
 jobs:
   build-and-release:
     runs-on: macos-latest
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.23.4'
-        
+
     - name: Get version from tag
       id: version
       run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-      
+
     - name: Verify Go version and modules
       run: |
         go version
         go mod tidy
         go mod verify
-        
+
     - name: Run tests
       run: go test ./...
-      
+
     - name: Build ARM64 macOS binary
       env:
         GOOS: darwin
@@ -42,25 +42,49 @@ jobs:
         go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" \
           -o scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64 \
           .
-          
-    - name: Create archive
+
+    - name: Build AMD64 macOS binary
+      env:
+        GOOS: darwin
+        GOARCH: amd64
       run: |
-        mkdir -p release
-        cp scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64 release/scripto
-        cp README.md release/
-        cp commands/scripts/scripto.zsh release/
-        tar -czf scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz -C release .
-        
+        go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" \
+          -o scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64 \
+          .
+
+    - name: Create archives
+      run: |
+        mkdir -p release-arm64 release-amd64
+
+        cp scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64 release-arm64/scripto
+        cp README.md release-arm64/
+        cp commands/scripts/scripto.zsh release-arm64/
+        tar -czf scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz -C release-arm64 .
+
+        cp scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64 release-amd64/scripto
+        cp README.md release-amd64/
+        cp commands/scripts/scripto.zsh release-amd64/
+        tar -czf scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz -C release-amd64 .
+
     - name: Generate checksums
       run: |
         shasum -a 256 scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz > scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz.sha256
+        shasum -a 256 scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz > scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz.sha256
         shasum -a 256 scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64 > scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.sha256
-        
+        shasum -a 256 scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64 > scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64.sha256
+
+    - name: Capture SHA256 values
+      id: sha256
+      run: |
+        ARM64_SHA=$(awk '{print $1}' scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz.sha256)
+        AMD64_SHA=$(awk '{print $1}' scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz.sha256)
+        echo "ARM64=$ARM64_SHA" >> $GITHUB_OUTPUT
+        echo "AMD64=$AMD64_SHA" >> $GITHUB_OUTPUT
+
     - name: Extract changelog for this version
       id: changelog
       run: |
         if [ -f CHANGELOG.md ]; then
-          # Extract changelog section for this version
           sed -n "/## \[${{ steps.version.outputs.VERSION }}\]/,/## \[/p" CHANGELOG.md | sed '$d' > current_changelog.md
           if [ -s current_changelog.md ]; then
             echo "CHANGELOG_CONTENT<<EOF" >> $GITHUB_OUTPUT
@@ -72,7 +96,7 @@ jobs:
         else
           echo "CHANGELOG_CONTENT=Release ${{ steps.version.outputs.VERSION }}" >> $GITHUB_OUTPUT
         fi
-        
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
@@ -80,36 +104,32 @@ jobs:
         name: Release ${{ steps.version.outputs.VERSION }}
         body: |
           ## Scripto ${{ steps.version.outputs.VERSION }}
-          
+
           ${{ steps.changelog.outputs.CHANGELOG_CONTENT }}
-          
+
           ### Installation
-          
-          **ARM64 macOS:**
+
+          **Homebrew (recommended):**
           ```bash
-          # Download and extract
-          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz | tar -xz
-          
-          # Make executable and install
-          chmod +x scripto
-          sudo mv scripto /usr/local/bin/
-          
-          # Install shell integration
+          brew tap vsuhanov/scripto
+          brew install scripto
           scripto install
           ```
-          
-          **Manual verification:**
+
+          **ARM64 macOS (Apple Silicon):**
           ```bash
-          # Verify checksum
-          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz.sha256
-          shasum -a 256 scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz | tar -xz
+          chmod +x scripto && sudo mv scripto /usr/local/bin/
+          scripto install
           ```
-          
-          ### What's included:
-          - `scripto` - Main binary for ARM64 macOS
-          - `README.md` - Documentation
-          - `scripto.zsh` - Shell integration script
-          
+
+          **AMD64 macOS (Intel):**
+          ```bash
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.VERSION }}/scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz | tar -xz
+          chmod +x scripto && sudo mv scripto /usr/local/bin/
+          scripto install
+          ```
+
           See the [README](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.VERSION }}/README.md) for complete usage instructions.
         draft: false
         prerelease: false
@@ -118,20 +138,69 @@ jobs:
           scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz.sha256
           scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64
           scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64.sha256
+          scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz
+          scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz.sha256
+          scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64
+          scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64.sha256
         token: ${{ secrets.GITHUB_TOKEN }}
-        
+
+    - name: Update Homebrew formula
+      env:
+        HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      run: |
+        VERSION=${{ steps.version.outputs.VERSION }}
+        ARM64_SHA=${{ steps.sha256.outputs.ARM64 }}
+        AMD64_SHA=${{ steps.sha256.outputs.AMD64 }}
+
+        git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/vsuhanov/homebrew-scripto.git tap-repo
+        cd tap-repo
+
+        cat > Formula/scripto.rb << FORMULA
+        class Scripto < Formula
+          desc "CLI for managing and executing custom scripts with interactive TUI"
+          homepage "https://github.com/vsuhanov/scripto"
+          version "${VERSION#v}"
+          license "MIT"
+
+          on_macos do
+            on_arm do
+              url "https://github.com/vsuhanov/scripto/releases/download/${VERSION}/scripto-${VERSION}-darwin-arm64.tar.gz"
+              sha256 "${ARM64_SHA}"
+            end
+            on_intel do
+              url "https://github.com/vsuhanov/scripto/releases/download/${VERSION}/scripto-${VERSION}-darwin-amd64.tar.gz"
+              sha256 "${AMD64_SHA}"
+            end
+          end
+
+          def install
+            bin.install "scripto"
+          end
+
+          test do
+            system "#{bin}/scripto", "--version"
+          end
+        end
+        FORMULA
+
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git config user.name "github-actions[bot]"
+        git add Formula/scripto.rb
+        git commit -m "Update scripto to ${VERSION}"
+        git push
+
   notify:
     needs: build-and-release
     runs-on: ubuntu-latest
     if: always()
-    
+
     steps:
     - name: Notify success
       if: needs.build-and-release.result == 'success'
       run: |
         echo "✅ Release ${{ github.ref_name }} created successfully!"
         echo "🔗 Download: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
-        
+
     - name: Notify failure
       if: needs.build-and-release.result == 'failure'
       run: |

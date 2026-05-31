@@ -1,4 +1,4 @@
-module scripto
+module github.com/vsuhanov/scripto
 
 go 1.24.0
 
