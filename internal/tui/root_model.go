@@ -186,9 +186,20 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case EditScriptExternalMsg:
 		return m, m.handleEditScriptExternal(msg.script)
 
-	case ShowScriptEditorMsg:
-		scriptEditor := NewScriptEditorScreen(msg.script, false, m.container)
+	case ShowScopeChoiceForEditMsg:
+		choiceScreen := NewScopeEditChoiceScreen(msg.script, m.container)
 		m.screenStack = append(m.screenStack, m.currentScreen)
+		m.currentScreen = choiceScreen
+		return m, choiceScreen.Init()
+
+	case ShowScriptEditorMsg:
+		scriptEditor := NewScriptEditorScreen(msg.script, msg.isNewScript, m.container)
+		if msg.initialCommand != "" {
+			scriptEditor.initialCommand = msg.initialCommand
+		}
+		if _, isChoice := m.currentScreen.(*ScopeEditChoiceScreen); !isChoice {
+			m.screenStack = append(m.screenStack, m.currentScreen)
+		}
 		m.currentScreen = scriptEditor
 		return m, scriptEditor.Init()
 

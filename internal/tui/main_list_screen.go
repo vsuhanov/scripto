@@ -794,6 +794,12 @@ func (m *MainListScreen) handleInlineEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if m.selectedScript.OriginalScope != "" {
+		return m, func() tea.Msg {
+			return ShowScopeChoiceForEditMsg{script: m.selectedScript}
+		}
+	}
+
 	return m, func() tea.Msg {
 		return ShowScriptEditorMsg{script: m.selectedScript}
 	}

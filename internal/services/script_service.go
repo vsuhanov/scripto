@@ -280,17 +280,21 @@ func (s *ScriptService) ValidateScript(script *entities.Script) error {
 }
 
 func (s *ScriptService) removeScriptFromConfig(config storage.Config, script *entities.Script) error {
-	scripts, exists := config[script.Scope]
+	lookupScope := script.Scope
+	if _, exists := config[lookupScope]; !exists && script.OriginalScope != "" {
+		lookupScope = script.OriginalScope
+	}
+	scripts, exists := config[lookupScope]
 	if !exists {
 		return fmt.Errorf("script scope not found in config")
 	}
 
 	scriptRemoved := false
 	for i, configScript := range scripts {
-		if s.scriptsMatch(configScript, script) {
-			config[script.Scope] = append(scripts[:i], scripts[i+1:]...)
-			if len(config[script.Scope]) == 0 {
-				delete(config, script.Scope)
+		if s.scriptsMatchInScope(configScript, script, lookupScope) {
+			config[lookupScope] = append(scripts[:i], scripts[i+1:]...)
+			if len(config[lookupScope]) == 0 {
+				delete(config, lookupScope)
 			}
 			scriptRemoved = true
 			break
@@ -309,6 +313,13 @@ func (s *ScriptService) scriptsMatch(script1, script2 *entities.Script) bool {
 		script1.FilePath == script2.FilePath &&
 		script1.Description == script2.Description &&
 		script1.Scope == script2.Scope
+}
+
+func (s *ScriptService) scriptsMatchInScope(configScript, script *entities.Script, scope string) bool {
+	return configScript.Name == script.Name &&
+		configScript.FilePath == script.FilePath &&
+		configScript.Description == script.Description &&
+		configScript.Scope == scope
 }
 
 func (s *ScriptService) checkForDuplicateName(config storage.Config, script *entities.Script) error {

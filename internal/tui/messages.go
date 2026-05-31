@@ -88,6 +88,12 @@ type CdToDirectoryMsg struct {
 }
 
 type ShowScriptEditorMsg struct {
+	script         *entities.Script
+	initialCommand string
+	isNewScript    bool
+}
+
+type ShowScopeChoiceForEditMsg struct {
 	script *entities.Script
 }
 
