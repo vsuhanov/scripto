@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/vsuhanov/scripto/entities"
 	"github.com/vsuhanov/scripto/internal/services"
 )
 
@@ -181,6 +183,14 @@ func (s *ExecutionHistoryScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		cursor := s.table.Cursor()
 		if cursor < len(s.records) {
 			record := s.records[cursor]
+			return s, s.showPlaceholderForm(record)
+		}
+		return s, nil
+
+	case "x":
+		cursor := s.table.Cursor()
+		if cursor < len(s.records) {
+			record := s.records[cursor]
 			return s, s.reExecute(record)
 		}
 		return s, nil
@@ -190,6 +200,19 @@ func (s *ExecutionHistoryScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 		s.table, cmd = s.table.Update(msg)
 		s.updateDetailContent()
 		return s, cmd
+	}
+}
+
+func (s *ExecutionHistoryScreen) showPlaceholderForm(record services.ExecutionRecord) tea.Cmd {
+	return func() tea.Msg {
+		if record.ScriptObjectDefinition == "" {
+			return s.reExecute(record)()
+		}
+		var script entities.Script
+		if err := json.Unmarshal([]byte(record.ScriptObjectDefinition), &script); err != nil {
+			return s.reExecute(record)()
+		}
+		return ShowScriptExecutionWithWorkingDirMsg{script: &script}
 	}
 }
 
@@ -262,7 +285,7 @@ func (s *ExecutionHistoryScreen) View() string {
 
 	tablePane := ListStyle.Width(s.width - 2).Render(s.table.View())
 	detailPane := PreviewStyle.Width(s.width - 2).Render(s.detailVP.View())
-	footer := HelpStyle.Render("j/k: navigate • enter: re-execute • q/esc: back")
+	footer := HelpStyle.Render("j/k: navigate • enter: edit & execute • x: re-execute • q/esc: back")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, tablePane, detailPane, footer)
 }
