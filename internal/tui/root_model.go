@@ -38,6 +38,12 @@ type ShowScriptEditorRequest struct {
 
 func (ShowScriptEditorRequest) tuiRequest() {}
 
+type ShowMainListWithSearchRequest struct {
+	SearchText string
+}
+
+func (ShowMainListWithSearchRequest) tuiRequest() {}
+
 type RootModel struct {
 	container                        *services.Container
 	currentScreen                    tea.Model
@@ -71,6 +77,13 @@ func NewRootModel(container *services.Container, request TuiRequest) (*RootModel
 		editor := NewScriptEditorScreen(req.Script, true, container)
 		editor.initialCommand = req.InitialCommand
 		initialScreen = editor
+	case ShowMainListWithSearchRequest:
+		mainList, err := NewMainListScreen(container)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create main list screen: %w", err)
+		}
+		mainList.initialSearch = req.SearchText
+		initialScreen = mainList
 	default:
 		initialScreen, err = NewMainListScreen(container)
 		if err != nil {

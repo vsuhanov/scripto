@@ -79,8 +79,9 @@ type MainListScreen struct {
 	previewNavMode        bool
 	previewFocusedElement int
 
-	searchMode  bool
-	searchInput textinput.Model
+	searchMode    bool
+	searchInput   textinput.Model
+	initialSearch string
 }
 
 func NewMainListScreen(container *services.Container) (*MainListScreen, error) {
@@ -347,6 +348,12 @@ func (m *MainListScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.scriptStats = msg.stats
 		m.frecencyScores = msg.frecencyScores
 		m.ready = true
+		if m.initialSearch != "" {
+			m.scopeMode = scopeModeAllScopes
+			m.searchMode = true
+			m.searchInput.SetValue("^" + m.initialSearch + "$")
+			m.initialSearch = ""
+		}
 		m.sortScripts()
 		if m.selectedItemIndex == 0 || m.selectedItemIndex >= len(m.buildListItems()) {
 			m.selectedItemIndex = m.firstScriptItemIndex()

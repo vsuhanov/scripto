@@ -464,6 +464,20 @@ func (s *ScriptService) FindAllScopesScripts() ([]*entities.Script, error) {
 	return append(mainScripts, extra...), nil
 }
 
+func (s *ScriptService) MatchAllScopes(input string) ([]*entities.Script, error) {
+	allScripts, err := s.FindAllScopesScripts()
+	if err != nil {
+		return nil, err
+	}
+	var matches []*entities.Script
+	for _, script := range allScripts {
+		if script.Name != "" && script.Name == input {
+			matches = append(matches, script)
+		}
+	}
+	return matches, nil
+}
+
 func (s *ScriptService) Match(input string) (*entities.Script, error) {
 	allScripts, err := s.FindAllScripts()
 	if err != nil {

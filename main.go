@@ -323,8 +323,16 @@ func executeScript(container *services.Container, userArgs []string) error {
 		return executeFoundScript(container, matchResult, scriptArgs)
 	}
 
-	fullInput := strings.Join(userArgs, " ")
-	return handleNoMatch(container, fullInput)
+	allScopeMatches, err := container.ScriptService.MatchAllScopes(scriptName)
+	if err != nil {
+		return fmt.Errorf("failed to match script across scopes: %w", err)
+	}
+
+	if len(allScopeMatches) == 1 {
+		return executeFoundScript(container, allScopeMatches[0], scriptArgs)
+	}
+
+	return tui.RunApp(container, tui.ShowMainListWithSearchRequest{SearchText: scriptName})
 }
 
 func parseScriptNameAndArgs(userArgs []string) (string, []string) {
@@ -363,13 +371,6 @@ func executeFoundScript(container *services.Container, scriptEnt *entities.Scrip
 	return tui.RunApp(container, tui.ExecuteScriptRequest{Script: scriptEnt, ScriptArgs: scriptArgs})
 }
 
-func handleNoMatch(container *services.Container, input string) error {
-	scriptObj := container.ScriptService.CreateEmptyScript()
-	return tui.RunApp(container, tui.ShowScriptEditorRequest{
-		Script:         scriptObj,
-		InitialCommand: input,
-	})
-}
 
 func handleCompletion(container *services.Container, args []string) {
 	showAll := false
