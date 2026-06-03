@@ -328,6 +328,14 @@ func executeScript(container *services.Container, userArgs []string) error {
 		return fmt.Errorf("failed to match script across scopes: %w", err)
 	}
 
+	if len(allScopeMatches) == 0 {
+		scriptObj := container.ScriptService.CreateEmptyScript()
+		return tui.RunApp(container, tui.ShowScriptEditorRequest{
+			Script:         scriptObj,
+			InitialCommand: strings.Join(userArgs, " "),
+		})
+	}
+
 	if len(allScopeMatches) == 1 {
 		return executeFoundScript(container, allScopeMatches[0], scriptArgs)
 	}
