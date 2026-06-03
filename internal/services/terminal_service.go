@@ -146,6 +146,7 @@ func (ts *TerminalService) executeScriptCommand(command, name string) {
 		content := command
 		if name != "" {
 			content += "\nprint -s " + shellescape("scripto "+name)
+			content += "\nprintf " + shellescape("\\e]2;scripto "+name+"\\a")
 		}
 		_ = ts.writeFileFunc(cmdFdPath, []byte(content), 0600)
 	} else {
