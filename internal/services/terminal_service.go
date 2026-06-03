@@ -44,16 +44,15 @@ type TerminalServiceOptions struct {
 }
 
 type TerminalService struct {
-	options TerminalServiceOptions
-	exitFunc osExitFunc
-	writeFileFunc osWriteFileFunc	
-
+	options       TerminalServiceOptions
+	exitFunc      osExitFunc
+	writeFileFunc osWriteFileFunc
 }
 
 func NewTerminalService(options TerminalServiceOptions) *TerminalService {
 	return &TerminalService{
-		options: options,
-		exitFunc: os.Exit,
+		options:       options,
+		exitFunc:      os.Exit,
 		writeFileFunc: os.WriteFile,
 	}
 }
@@ -143,10 +142,13 @@ func (ts *TerminalService) executeScriptCommand(command, name string) {
 	}
 	cmdFdPath := ts.options.targetCommandFile
 	if cmdFdPath != "" {
-		content := command
+		content := ""
+		if name != "" {
+			content += "printf " + shellescape("\\e]2;scripto "+name+"\\a") + "\n"
+		}
+		content += command
 		if name != "" {
 			content += "\nprint -s " + shellescape("scripto "+name)
-			content += "\nprintf " + shellescape("\\e]2;scripto "+name+"\\a")
 		}
 		_ = ts.writeFileFunc(cmdFdPath, []byte(content), 0600)
 	} else {
@@ -168,4 +170,3 @@ func (ts *TerminalService) editScriptExternalCommand(scriptPath string) {
 	}
 	ts.exitFunc(int(exitCodeExternalEditor))
 }
-
