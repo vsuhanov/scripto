@@ -143,11 +143,19 @@ func (ts *TerminalService) executeScriptCommand(command, name string) {
 	}
 	cmdFdPath := ts.options.targetCommandFile
 	if cmdFdPath != "" {
-		_ = ts.writeFileFunc(cmdFdPath, []byte(command), 0600)
+		content := command
+		if name != "" {
+			content += "\nprint -s " + shellescape("scripto "+name)
+		}
+		_ = ts.writeFileFunc(cmdFdPath, []byte(content), 0600)
 	} else {
 		fmt.Print(command)
 	}
 	ts.exitFunc(int(exitCodeSuccess))
+}
+
+func shellescape(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func (ts *TerminalService) editScriptExternalCommand(scriptPath string) {
