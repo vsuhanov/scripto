@@ -228,7 +228,7 @@ func (s *ExecutionHistoryScreen) reExecute(record services.ExecutionRecord) tea.
 			ScriptObjectDefinition: record.ScriptObjectDefinition,
 		}
 		return ExecuteAppCommandMsg{
-			command:       s.container.TerminalService.PrepareScriptExecution(record.ExecutedScript),
+			command:       s.container.TerminalService.PrepareScriptExecution(record.ExecutedScript, record.ScriptName),
 			historyRecord: &newRecord,
 		}
 	}

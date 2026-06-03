@@ -257,7 +257,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		dir := msg.dir
 		return m, func() tea.Msg {
 			return ExecuteAppCommandMsg{
-				command: m.container.TerminalService.PrepareScriptExecution("cd " + shellQuote(dir)),
+				command: m.container.TerminalService.PrepareScriptExecution("cd "+shellQuote(dir), ""),
 			}
 		}
 
@@ -342,7 +342,7 @@ func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptAr
 			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, nil)
 			log.Printf("handleExecuteScriptWithDir: historyRecord=%v", record != nil)
 			return ExecuteAppCommandMsg{
-				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand),
+				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name),
 				historyRecord: record,
 			}
 		}
@@ -382,7 +382,7 @@ func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]s
 			finalCommand = "cd " + shellQuote(workingDir) + " && " + finalCommand
 		}
 		record := m.buildHistoryRecord(script, finalCommand, originalScript, values)
-		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand), historyRecord: record}
+		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name), historyRecord: record}
 	}
 }
 

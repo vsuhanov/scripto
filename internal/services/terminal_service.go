@@ -32,6 +32,7 @@ type ExitCommand struct {
 
 type ExecuteScriptCommand struct {
 	Command string
+	Name    string
 }
 
 type EditScriptExternalCommand struct {
@@ -61,8 +62,8 @@ func (ts *TerminalService) PrepareExit(code int) TerminalServiceCommand {
 	return &ExitCommand{Code: code}
 }
 
-func (ts *TerminalService) PrepareScriptExecution(command string) TerminalServiceCommand {
-	return &ExecuteScriptCommand{Command: command}
+func (ts *TerminalService) PrepareScriptExecution(command, name string) TerminalServiceCommand {
+	return &ExecuteScriptCommand{Command: command, Name: name}
 }
 
 func (ts *TerminalService) PrepareExternalEditing(scriptPath string) TerminalServiceCommand {
@@ -78,7 +79,7 @@ func (ts *TerminalService) ExecuteCommand(cmd TerminalServiceCommand) {
 	case *ExitCommand:
 		ts.exitFunc(c.Code)
 	case *ExecuteScriptCommand:
-		ts.executeScriptCommand(c.Command)
+		ts.executeScriptCommand(c.Command, c.Name)
 	case *EditScriptExternalCommand:
 		ts.editScriptExternalCommand(c.ScriptPath)
 	}
@@ -111,12 +112,13 @@ func (ts *TerminalService) PrintScriptSavedBox(name, scope, scopeColor, command 
 	fmt.Fprintln(os.Stderr, boxStyle.Render(content))
 }
 
-func printScriptBox(command string) {
+func printScriptBox(command, name string) {
 	width, _, err := xterm.GetSize(os.Stderr.Fd())
 	if err != nil || width <= 0 {
 		width = 80
 	}
 	titleStyle := lipgloss.NewStyle().Foreground(colors.Primary).Bold(true)
+	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#374151", Dark: "#e5e7eb"})
 	boxStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.NormalBorder()).
 		BorderTop(true).
@@ -127,13 +129,17 @@ func printScriptBox(command string) {
 		PaddingLeft(1).
 		Width(width - 2)
 
-	content := titleStyle.Render("Scripto command") + "\n" + command
+	title := "Scripto command"
+	if name != "" {
+		title = title + "  " + nameStyle.Render(name)
+	}
+	content := titleStyle.Render(title) + "\n" + command
 	fmt.Fprintln(os.Stderr, boxStyle.Render(content))
 }
 
-func (ts *TerminalService) executeScriptCommand(command string) {
+func (ts *TerminalService) executeScriptCommand(command, name string) {
 	if utils.IsStderrTerminal() {
-		printScriptBox(command)
+		printScriptBox(command, name)
 	}
 	cmdFdPath := ts.options.targetCommandFile
 	if cmdFdPath != "" {
