@@ -13,6 +13,7 @@ type ArgumentProcessingResult struct {
 	Metas                []templatex.VariableMeta
 	FinalCommand         string
 	OriginalScript       string
+	ParsedValues         map[string]string
 }
 
 type ExecutionService struct{}
@@ -63,11 +64,62 @@ func (es *ExecutionService) ProcessScriptArguments(s *entities.Script, scriptArg
 		}, nil
 	}
 
+	parsedValues := parseNamedArgs(scriptArgs)
+
+	values := make(map[string]string)
+	for _, meta := range metas {
+		if meta.DefaultValue != "" {
+			values[meta.Name] = meta.DefaultValue
+		}
+	}
+	for name, val := range parsedValues {
+		values[name] = val
+	}
+
+	allSatisfied := true
+	for _, meta := range metas {
+		if values[meta.Name] == "" {
+			allSatisfied = false
+			break
+		}
+	}
+
+	if allSatisfied {
+		finalCommand, err := templatex.Execute(trimmed, values)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render template: %w", err)
+		}
+		return &ArgumentProcessingResult{
+			NeedsPlaceholderForm: false,
+			Metas:                metas,
+			FinalCommand:         finalCommand,
+			OriginalScript:       contentStr,
+			ParsedValues:         parsedValues,
+		}, nil
+	}
+
 	return &ArgumentProcessingResult{
 		NeedsPlaceholderForm: true,
 		Metas:                metas,
 		OriginalScript:       contentStr,
+		ParsedValues:         parsedValues,
 	}, nil
+}
+
+func parseNamedArgs(args []string) map[string]string {
+	result := make(map[string]string)
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "--") {
+			continue
+		}
+		trimmed := strings.TrimPrefix(arg, "--")
+		idx := strings.Index(trimmed, "=")
+		if idx < 0 {
+			continue
+		}
+		result[trimmed[:idx]] = trimmed[idx+1:]
+	}
+	return result
 }
 
 func (es *ExecutionService) PrepareExecution(s *entities.Script, _ []string, placeholderValues map[string]string) (string, error) {

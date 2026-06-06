@@ -270,7 +270,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		dir := msg.dir
 		return m, func() tea.Msg {
 			return ExecuteAppCommandMsg{
-				command: m.container.TerminalService.PrepareScriptExecution("cd "+shellQuote(dir), ""),
+				command: m.container.TerminalService.PrepareScriptExecution("cd "+shellQuote(dir), "", nil, ""),
 			}
 		}
 
@@ -304,8 +304,8 @@ func (m RootModel) View() string {
 
 func scriptDefaultWorkingDir(script *entities.Script) string {
 	cwd, _ := os.Getwd()
-	if script.OriginalScope != "" && script.OriginalScope != "global" {
-		return script.OriginalScope
+	if script.OriginalScope != "" {
+		return cwd
 	}
 	if script.Scope != "" && script.Scope != "global" && script.Scope != cwd {
 		return script.Scope
@@ -313,13 +313,46 @@ func scriptDefaultWorkingDir(script *entities.Script) string {
 	return cwd
 }
 
+func extractWorkingDirArg(args []string) (string, []string) {
+	var workingDir string
+	var remaining []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--working-dir=") {
+			workingDir = strings.TrimPrefix(arg, "--working-dir=")
+		} else {
+			remaining = append(remaining, arg)
+		}
+	}
+	return workingDir, remaining
+}
+
 func (m *RootModel) showExecutionForm(script *entities.Script, scriptArgs []string) tea.Cmd {
 	return func() tea.Msg {
-		workingDir := scriptDefaultWorkingDir(script)
-		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, scriptArgs)
+		workingDirFromArgs, filteredArgs := extractWorkingDirArg(scriptArgs)
+		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, filteredArgs)
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to process script arguments: %w", err))
 		}
+
+		workingDir := scriptDefaultWorkingDir(script)
+		if workingDirFromArgs != "" {
+			workingDir = workingDirFromArgs
+		}
+
+		canSkip := workingDirFromArgs != "" || script.OriginalScope != ""
+		if !processingResult.NeedsPlaceholderForm && canSkip {
+			cwd, _ := os.Getwd()
+			finalCommand := processingResult.FinalCommand
+			if workingDir != "" && workingDir != cwd {
+				finalCommand = "cd " + shellQuote(workingDir) + " && " + finalCommand
+			}
+			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, processingResult.ParsedValues)
+			return ExecuteAppCommandMsg{
+				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir),
+				historyRecord: record,
+			}
+		}
+
 		return ShowPlaceholderFormMsg{
 			script:         script,
 			action:         "execute",
@@ -352,10 +385,10 @@ func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptAr
 			if workingDir != "" && workingDir != cwd {
 				finalCommand = "cd " + shellQuote(workingDir) + " && " + finalCommand
 			}
-			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, nil)
+			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, processingResult.ParsedValues)
 			log.Printf("handleExecuteScriptWithDir: historyRecord=%v", record != nil)
 			return ExecuteAppCommandMsg{
-				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name),
+				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir),
 				historyRecord: record,
 			}
 		}
@@ -395,7 +428,7 @@ func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]s
 			finalCommand = "cd " + shellQuote(workingDir) + " && " + finalCommand
 		}
 		record := m.buildHistoryRecord(script, finalCommand, originalScript, values)
-		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name), historyRecord: record}
+		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, values, workingDir), historyRecord: record}
 	}
 }
 
