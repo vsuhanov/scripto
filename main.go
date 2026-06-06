@@ -357,10 +357,7 @@ func parseScriptNameAndArgs(userArgs []string) (string, []string) {
 	}
 
 	if separatorIndex == -1 {
-		if len(userArgs) == 1 {
-			return userArgs[0], []string{}
-		}
-		return userArgs[0], userArgs[1:]
+		return strings.Join(userArgs, " "), []string{}
 	}
 
 	if separatorIndex == 0 {
