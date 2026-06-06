@@ -31,10 +31,11 @@ type ExitCommand struct {
 }
 
 type ExecuteScriptCommand struct {
-	Command          string
-	Name             string
+	Command           string
+	Name              string
 	PlaceholderValues map[string]string
 	WorkingDir        string
+	WriteHistory      bool
 }
 
 type EditScriptExternalCommand struct {
@@ -63,8 +64,8 @@ func (ts *TerminalService) PrepareExit(code int) TerminalServiceCommand {
 	return &ExitCommand{Code: code}
 }
 
-func (ts *TerminalService) PrepareScriptExecution(command, name string, placeholderValues map[string]string, workingDir string) TerminalServiceCommand {
-	return &ExecuteScriptCommand{Command: command, Name: name, PlaceholderValues: placeholderValues, WorkingDir: workingDir}
+func (ts *TerminalService) PrepareScriptExecution(command, name string, placeholderValues map[string]string, workingDir string, writeHistory bool) TerminalServiceCommand {
+	return &ExecuteScriptCommand{Command: command, Name: name, PlaceholderValues: placeholderValues, WorkingDir: workingDir, WriteHistory: writeHistory}
 }
 
 func (ts *TerminalService) PrepareExternalEditing(scriptPath string) TerminalServiceCommand {
@@ -80,7 +81,7 @@ func (ts *TerminalService) ExecuteCommand(cmd TerminalServiceCommand) {
 	case *ExitCommand:
 		ts.exitFunc(c.Code)
 	case *ExecuteScriptCommand:
-		ts.executeScriptCommand(c.Command, c.Name, c.PlaceholderValues, c.WorkingDir)
+		ts.executeScriptCommand(c.Command, c.Name, c.PlaceholderValues, c.WorkingDir, c.WriteHistory)
 	case *EditScriptExternalCommand:
 		ts.editScriptExternalCommand(c.ScriptPath)
 	}
@@ -138,7 +139,7 @@ func printScriptBox(command, name string) {
 	fmt.Fprintln(os.Stderr, boxStyle.Render(content))
 }
 
-func (ts *TerminalService) executeScriptCommand(command, name string, placeholderValues map[string]string, workingDir string) {
+func (ts *TerminalService) executeScriptCommand(command, name string, placeholderValues map[string]string, workingDir string, writeHistory bool) {
 	if utils.IsStderrTerminal() {
 		printScriptBox(command, name)
 	}
@@ -149,12 +150,13 @@ func (ts *TerminalService) executeScriptCommand(command, name string, placeholde
 			content += "printf " + shellescape("\\e]2;scripto "+name+"\\a") + "\n"
 		}
 		content += command
-		if name != "" {
-			content += "\nprint -s " + shellescape("scripto "+name)
+		if writeHistory && name != "" {
 			cwd, _ := os.Getwd()
 			richEntry := buildRichHistoryEntry(name, placeholderValues, workingDir, cwd)
 			if richEntry != "" {
 				content += "\nprint -s " + shellescape(richEntry)
+			} else {
+				content += "\nprint -s " + shellescape("scripto "+name)
 			}
 		}
 		_ = ts.writeFileFunc(cmdFdPath, []byte(content), 0600)

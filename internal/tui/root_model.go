@@ -270,7 +270,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		dir := msg.dir
 		return m, func() tea.Msg {
 			return ExecuteAppCommandMsg{
-				command: m.container.TerminalService.PrepareScriptExecution("cd "+shellQuote(dir), "", nil, ""),
+				command: m.container.TerminalService.PrepareScriptExecution("cd "+shellQuote(dir), "", nil, "", false),
 			}
 		}
 
@@ -348,7 +348,7 @@ func (m *RootModel) showExecutionForm(script *entities.Script, scriptArgs []stri
 			}
 			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, processingResult.ParsedValues)
 			return ExecuteAppCommandMsg{
-				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir),
+				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir, false),
 				historyRecord: record,
 			}
 		}
@@ -388,7 +388,7 @@ func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptAr
 			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, processingResult.ParsedValues)
 			log.Printf("handleExecuteScriptWithDir: historyRecord=%v", record != nil)
 			return ExecuteAppCommandMsg{
-				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir),
+				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir, false),
 				historyRecord: record,
 			}
 		}
@@ -428,7 +428,7 @@ func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]s
 			finalCommand = "cd " + shellQuote(workingDir) + " && " + finalCommand
 		}
 		record := m.buildHistoryRecord(script, finalCommand, originalScript, values)
-		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, values, workingDir), historyRecord: record}
+		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, values, workingDir, true), historyRecord: record}
 	}
 }
 
