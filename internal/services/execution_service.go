@@ -66,25 +66,24 @@ func (es *ExecutionService) ProcessScriptArguments(s *entities.Script, scriptArg
 
 	parsedValues := parseNamedArgs(scriptArgs)
 
-	values := make(map[string]string)
-	for _, meta := range metas {
-		if meta.DefaultValue != "" {
-			values[meta.Name] = meta.DefaultValue
-		}
-	}
-	for name, val := range parsedValues {
-		values[name] = val
-	}
-
 	allSatisfied := true
 	for _, meta := range metas {
-		if values[meta.Name] == "" {
+		if parsedValues[meta.Name] == "" {
 			allSatisfied = false
 			break
 		}
 	}
 
 	if allSatisfied {
+		values := make(map[string]string)
+		for _, meta := range metas {
+			if meta.DefaultValue != "" {
+				values[meta.Name] = meta.DefaultValue
+			}
+		}
+		for name, val := range parsedValues {
+			values[name] = val
+		}
 		finalCommand, err := templatex.Execute(trimmed, values)
 		if err != nil {
 			return nil, fmt.Errorf("failed to render template: %w", err)

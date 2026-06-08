@@ -36,6 +36,7 @@ type ExitAppMsg struct {
 type ExecuteScriptMsg struct {
 	script     *entities.Script
 	scriptArgs []string
+	fromCLI    bool
 }
 
 type SaveScriptMsg struct {

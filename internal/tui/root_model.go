@@ -105,7 +105,7 @@ func (m RootModel) Init() tea.Cmd {
 	screenInit := m.currentScreen.Init()
 	if req, ok := m.initialRequest.(ExecuteScriptRequest); ok {
 		return tea.Batch(screenInit, func() tea.Msg {
-			return ExecuteScriptMsg{script: req.Script, scriptArgs: req.ScriptArgs}
+			return ExecuteScriptMsg{script: req.Script, scriptArgs: req.ScriptArgs, fromCLI: true}
 		})
 	}
 	return screenInit
@@ -143,12 +143,12 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		scopeType := getScopeType(realScope)
 		if scopeType == "local" || scopeType == "global" {
-			return m, m.handleExecuteScript(msg.script, msg.scriptArgs)
+			return m, m.handleExecuteScript(msg.script, msg.scriptArgs, !msg.fromCLI)
 		}
-		return m, m.showExecutionForm(msg.script, msg.scriptArgs)
+		return m, m.showExecutionForm(msg.script, msg.scriptArgs, msg.fromCLI)
 
 	case ShowScriptExecutionWithWorkingDirMsg:
-		return m, m.showExecutionForm(msg.script, msg.scriptArgs)
+		return m, m.showExecutionForm(msg.script, msg.scriptArgs, false)
 
 	case CopyScriptToClipboardMsg:
 		return m, m.handleCopyScriptToClipboard(msg.script)
@@ -326,7 +326,7 @@ func extractWorkingDirArg(args []string) (string, []string) {
 	return workingDir, remaining
 }
 
-func (m *RootModel) showExecutionForm(script *entities.Script, scriptArgs []string) tea.Cmd {
+func (m *RootModel) showExecutionForm(script *entities.Script, scriptArgs []string, fromCLI bool) tea.Cmd {
 	return func() tea.Msg {
 		workingDirFromArgs, filteredArgs := extractWorkingDirArg(scriptArgs)
 		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, filteredArgs)
@@ -348,7 +348,7 @@ func (m *RootModel) showExecutionForm(script *entities.Script, scriptArgs []stri
 			}
 			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, processingResult.ParsedValues)
 			return ExecuteAppCommandMsg{
-				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir, false),
+				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir, !fromCLI),
 				historyRecord: record,
 			}
 		}
@@ -363,11 +363,11 @@ func (m *RootModel) showExecutionForm(script *entities.Script, scriptArgs []stri
 	}
 }
 
-func (m *RootModel) handleExecuteScript(script *entities.Script, scriptArgs []string) tea.Cmd {
-	return m.handleExecuteScriptWithDir(script, scriptArgs, "")
+func (m *RootModel) handleExecuteScript(script *entities.Script, scriptArgs []string, writeHistory bool) tea.Cmd {
+	return m.handleExecuteScriptWithDir(script, scriptArgs, "", writeHistory)
 }
 
-func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptArgs []string, workingDir string) tea.Cmd {
+func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptArgs []string, workingDir string, writeHistory bool) tea.Cmd {
 	return func() tea.Msg {
 		log.Printf("handleExecuteScriptWithDir: scriptID=%q scriptName=%q workingDir=%q", script.ID, script.Name, workingDir)
 		processingResult, err := m.container.ExecutionService.ProcessScriptArguments(script, scriptArgs)
@@ -388,7 +388,7 @@ func (m *RootModel) handleExecuteScriptWithDir(script *entities.Script, scriptAr
 			record := m.buildHistoryRecord(script, finalCommand, processingResult.OriginalScript, processingResult.ParsedValues)
 			log.Printf("handleExecuteScriptWithDir: historyRecord=%v", record != nil)
 			return ExecuteAppCommandMsg{
-				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir, false),
+				command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, processingResult.ParsedValues, workingDir, writeHistory),
 				historyRecord: record,
 			}
 		}

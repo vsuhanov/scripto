@@ -337,7 +337,9 @@ func executeScript(container *services.Container, userArgs []string) error {
 	}
 
 	if len(allScopeMatches) == 1 {
-		return executeFoundScript(container, allScopeMatches[0], scriptArgs)
+		script := allScopeMatches[0]
+		markContextualIfApplicable(container, script)
+		return executeFoundScript(container, script, scriptArgs)
 	}
 
 	return tui.RunApp(container, tui.ShowMainListWithSearchRequest{SearchText: scriptName})
@@ -374,6 +376,27 @@ func parseScriptNameAndArgs(userArgs []string) (string, []string) {
 
 func executeFoundScript(container *services.Container, scriptEnt *entities.Script, scriptArgs []string) error {
 	return tui.RunApp(container, tui.ExecuteScriptRequest{Script: scriptEnt, ScriptArgs: scriptArgs})
+}
+
+func markContextualIfApplicable(container *services.Container, script *entities.Script) {
+	if container.ExecutionHistoryService == nil || script.ID == "" {
+		return
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	ids, err := container.ExecutionHistoryService.GetScriptIDsRunFromDirectory(cwd)
+	if err != nil {
+		return
+	}
+	for _, id := range ids {
+		if id == script.ID {
+			script.OriginalScope = script.Scope
+			script.Scope = cwd
+			return
+		}
+	}
 }
 
 
