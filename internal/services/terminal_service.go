@@ -149,7 +149,6 @@ func (ts *TerminalService) executeScriptCommand(command, name string, placeholde
 		if name != "" {
 			content += "printf " + shellescape("\\e]2;scripto "+name+"\\a") + "\n"
 		}
-		content += command
 		if writeHistory && name != "" {
 			cwd, _ := os.Getwd()
 			richEntry := buildRichHistoryEntry(name, placeholderValues, workingDir, cwd)
@@ -158,7 +157,9 @@ func (ts *TerminalService) executeScriptCommand(command, name string, placeholde
 			} else {
 				content += "\nprint -s " + shellescape("scripto "+name)
 			}
+			content += "\n"
 		}
+		content += command
 		_ = ts.writeFileFunc(cmdFdPath, []byte(content), 0600)
 	} else {
 		fmt.Print(command)
