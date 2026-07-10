@@ -39,7 +39,7 @@ jobs:
         GOOS: darwin
         GOARCH: arm64
       run: |
-        go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" \
+        go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${{ github.sha }}" \
           -o scripto-${{ steps.version.outputs.VERSION }}-darwin-arm64 \
           .
 
@@ -48,7 +48,7 @@ jobs:
         GOOS: darwin
         GOARCH: amd64
       run: |
-        go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" \
+        go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${{ github.sha }}" \
           -o scripto-${{ steps.version.outputs.VERSION }}-darwin-amd64 \
           .
 

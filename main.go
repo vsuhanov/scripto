@@ -34,6 +34,7 @@ var aliasCompletionTemplate string
 var skillMD string
 
 var version = "dev"
+var commit = "unknown"
 
 func configureLogger() {
 	logFilePath := "/tmp/scripto.log"
@@ -49,7 +50,13 @@ func main() {
 	configureLogger()
 
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		binaryPath, err := os.Executable()
+		if err != nil {
+			binaryPath = "unknown"
+		}
 		fmt.Printf("scripto version %s\n", version)
+		fmt.Printf("binary: %s\n", binaryPath)
+		fmt.Printf("commit: %s\n", commit)
 		return
 	}
 
