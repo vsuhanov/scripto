@@ -281,6 +281,30 @@ scripto --help
 scripto add --help
 ```
 
+### Non-interactive CLI (agents and automation)
+
+The `scripto cli` command group manages scripts without any TUI and always prints JSON, making it suitable for AI agents and scripting:
+
+```bash
+scripto cli list                                   # scripts visible from the current directory
+scripto cli list --all                             # every scope
+scripto cli get --name build
+scripto cli add --name build --command 'go build -o bin/app .'
+echo '{"name":"t2","command":"ls -la","scope":"global"}' | scripto cli add --json
+scripto cli edit --name build --new-name build2 --description "updated"
+scripto cli archive --name old-task
+scripto cli delete --id <id>
+```
+
+Verbs: `list`, `get`, `add`, `edit`, `delete`, `archive`, `unarchive`. Errors print `{"error": "..."}` with exit code 1. Run `scripto cli <verb> --help` for flags.
+
+**Install the agent skill** — a SKILL.md documenting the CLI and the full placeholder syntax is bundled in the binary:
+
+```bash
+scripto install skill                 # interactive picker: Claude Code (default), Kiro, or custom path
+scripto install skill --path <dir>    # writes <dir>/scripto/SKILL.md
+```
+
 ### Script Scopes
 
 Scripto organizes scripts in three scopes:

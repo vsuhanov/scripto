@@ -27,7 +27,7 @@ Caveat: a script literally named `cli` cannot be run via bare `scripto cli` (tha
 
 ## CLI reference
 
-All verbs print JSON to stdout. Exit code 0 on success, 1 on failure. Failures print `{"error": "message"}`.
+All verbs print JSON to stdout. Exit code 0 on success, 1 on failure. Failures print `{"error": "message"}`. Run `scripto cli --help` or `scripto cli <verb> --help` for plain-text usage.
 
 ### list
 
