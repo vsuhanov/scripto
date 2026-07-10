@@ -170,7 +170,11 @@ func NewPlaceholderForm(script *entities.Script, placeholders []templatex.Variab
 
 	wdInput := textinput.New()
 	wdInput.Placeholder = "working directory..."
-	wdInput.Width = leftPaneWidth - 20
+	wdWidth := width - 22
+	if wdWidth < 20 {
+		wdWidth = 20
+	}
+	wdInput.Width = wdWidth
 
 	if workingDir == "" {
 		workingDir, _ = os.Getwd()
@@ -184,12 +188,11 @@ func NewPlaceholderForm(script *entities.Script, placeholders []templatex.Variab
 		workingDirFocused = false
 	}
 
-	rightPaneWidth := width - leftPaneWidth - 2
-	if rightPaneWidth < 10 {
-		rightPaneWidth = 10
+	vpWidth := width - 6
+	if vpWidth < 10 {
+		vpWidth = 10
 	}
-	vpWidth := rightPaneWidth - 4
-	vpHeight := max(5, height-6)
+	vpHeight := max(3, height-6)
 
 	m := PlaceholderFormModel{
 		placeholders:      placeholders,
@@ -210,7 +213,7 @@ func NewPlaceholderForm(script *entities.Script, placeholders []templatex.Variab
 		workingDirFocused: workingDirFocused,
 	}
 
-	log.Printf("PlaceholderForm Init - Width: %d, Height: %d, RightPaneWidth: %d, ViewportWidth: %d, ViewportHeight: %d", width, height, rightPaneWidth, vpWidth, vpHeight)
+	log.Printf("PlaceholderForm Init - Width: %d, Height: %d, ViewportWidth: %d, ViewportHeight: %d", width, height, vpWidth, vpHeight)
 	m.viewport.SetContent(m.buildPreviewContent(map[string]string{}))
 	return m
 }
@@ -382,30 +385,22 @@ func (m *PlaceholderFormModel) fillFromSelectedRow() {
 	m.viewport.SetContent(m.buildPreviewContent(m.currentValues()))
 }
 
-func (m PlaceholderFormModel) tableHeight() int {
-	h := len(m.historyRecords)
-	if h > 10 {
-		h = 10
-	}
-	return h + 4
-}
-
 func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		rightPaneWidth := m.width - leftPaneWidth - 2
-		if rightPaneWidth < 10 {
-			rightPaneWidth = 10
+		vpWidth := m.width - 6
+		if vpWidth < 10 {
+			vpWidth = 10
 		}
-		m.viewport.Width = rightPaneWidth - 4
-		vpHeight := max(5, m.height-6)
-		if m.historyLoaded && len(m.historyRecords) > 0 {
-			vpHeight = max(5, m.height-6-m.tableHeight())
+		m.viewport.Width = vpWidth
+		wdWidth := m.width - 22
+		if wdWidth < 20 {
+			wdWidth = 20
 		}
-		m.viewport.Height = vpHeight
-		log.Printf("PlaceholderForm WindowSize - Width: %d, Height: %d, LeftPaneWidth: %d, RightPaneWidth: %d, ViewportWidth: %d, ViewportHeight: %d", m.width, m.height, leftPaneWidth, rightPaneWidth, m.viewport.Width, m.viewport.Height)
+		m.workingDirInput.Width = wdWidth
+		log.Printf("PlaceholderForm WindowSize - Width: %d, Height: %d, ViewportWidth: %d, ViewportHeight: %d", m.width, m.height, m.viewport.Width, m.viewport.Height)
 		return m, nil
 
 	case placeholderHistoryLoadedMsg:
@@ -421,8 +416,6 @@ func (m PlaceholderFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.saveInputValues()
 			m.fillFromSelectedRow()
-			vpHeight := max(5, m.height-6-m.tableHeight())
-			m.viewport.Height = vpHeight
 		}
 		return m, nil
 
@@ -816,26 +809,32 @@ func (m PlaceholderFormModel) View() string {
 	}
 	b.WriteString(InstructionStyle.Render(instructions))
 
-	leftPane := PreviewStyle.Width(leftPaneWidth).Render(b.String())
-
-	rightWidth := m.width - leftPaneWidth - 4
-	if rightWidth < 10 {
-		rightWidth = 10
+	formWidth := m.width - 4
+	if formWidth < 20 {
+		formWidth = 20
 	}
-	log.Printf("PlaceholderForm View - Width: %d, Height: %d, LeftPaneWidth: %d, RightWidth: %d, ViewportWidth: %d, ViewportHeight: %d, RenderedLeftWidth: %d", m.width, m.height, leftPaneWidth, rightWidth, m.viewport.Width, m.viewport.Height, lipgloss.Width(leftPane))
+	formPane := PreviewStyle.Width(formWidth).Render(b.String())
 
-	previewTitle := PreviewTitleStyle.Render("Preview")
-	previewContent := previewTitle + "\n" + m.viewport.View()
-	rightPane := PreviewStyle.Width(rightWidth).Render(previewContent)
-
-	formRow := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
-
+	var historySection string
 	if m.historyLoaded && len(m.historyRecords) > 0 {
 		tableTitle := PreviewTitleStyle.Render("Recent Executions")
-		tableView := m.historyTable.View()
-		historySection := lipgloss.JoinVertical(lipgloss.Left, tableTitle, tableView)
-		return lipgloss.JoinVertical(lipgloss.Left, historySection, formRow)
+		historySection = lipgloss.JoinVertical(lipgloss.Left, tableTitle, m.historyTable.View())
 	}
 
-	return formRow
+	vpHeight := m.height - lipgloss.Height(formPane) - lipgloss.Height(historySection) - 4
+	if vpHeight < 3 {
+		vpHeight = 3
+	}
+	m.viewport.Height = vpHeight
+
+	previewTitle := PreviewTitleStyle.Render("Preview")
+	previewPane := PreviewStyle.Width(formWidth).Render(previewTitle + "\n" + m.viewport.View())
+
+	log.Printf("PlaceholderForm View - Width: %d, Height: %d, FormWidth: %d, ViewportWidth: %d, ViewportHeight: %d", m.width, m.height, formWidth, m.viewport.Width, m.viewport.Height)
+
+	if historySection != "" {
+		return lipgloss.JoinVertical(lipgloss.Left, historySection, formPane, previewPane)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, formPane, previewPane)
 }

@@ -124,7 +124,7 @@ func (e *ScriptEditorScreen) initializeComponents() {
 	e.globalCheckbox = e.originalScript.Scope == "global"
 
 	e.scopeInput = textinput.New()
-	e.scopeInput.Placeholder = "Directory path"
+	e.scopeInput.Placeholder = "Directory path or glob pattern"
 	e.scopeInput.CharLimit = 500
 	e.scopeInput.Width = componentWidth
 
@@ -365,9 +365,9 @@ func (e *ScriptEditorScreen) View() string {
 	sections = append(sections, checkboxStyle.Render(checkboxLabel))
 
 	if !e.globalCheckbox {
-		scopeLabel := FieldLabelStyle.Render("Scope (directory path):")
+		scopeLabel := FieldLabelStyle.Render("Scope (directory path or glob pattern):")
 		if e.focusedField == EditorScreenFieldScope {
-			scopeLabel = FieldLabelStyle.Foreground(primaryColor).Render("Scope (directory path):")
+			scopeLabel = FieldLabelStyle.Foreground(primaryColor).Render("Scope (directory path or glob pattern):")
 		}
 		sections = append(sections, scopeLabel)
 		sections = append(sections, e.scopeInput.View())

@@ -30,6 +30,9 @@ var zshFunctionContent string
 //go:embed commands/scripts/completion-alias.zsh
 var aliasCompletionTemplate string
 
+//go:embed commands/skill/SKILL.md
+var skillMD string
+
 var version = "dev"
 
 func configureLogger() {
@@ -84,6 +87,10 @@ func handleCommand(container *services.Container, args []string) {
 			os.Exit(1)
 		}
 		return
+	}
+
+	if len(args) > 0 && args[0] == "cli" {
+		os.Exit(handleCli(container, args[1:]))
 	}
 
 	if len(args) == 0 {
@@ -165,6 +172,10 @@ func printInstallNote(note string) {
 }
 
 func handleInstall(args []string) error {
+	if len(args) > 0 && args[0] == "skill" {
+		return handleInstallSkill(args[1:])
+	}
+
 	turbo := false
 	alias := ""
 	for i, arg := range args {

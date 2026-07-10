@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/services"
 	. "github.com/vsuhanov/scripto/internal/utils"
 	"github.com/vsuhanov/scripto/internal/tui/colors"
 )
@@ -94,7 +95,11 @@ func (m *MainListScreen) formatPreviewMetadata(selected *entities.Script) string
 		if len(dir) > 50 {
 			dir = "..." + dir[len(dir)-47:]
 		}
-		dirLine = fmt.Sprintf("Directory: %s", dir)
+		dirLabel := "Directory"
+		if services.IsPatternScope(selected.Scope) {
+			dirLabel = "Pattern"
+		}
+		dirLine = fmt.Sprintf("%s: %s", dirLabel, dir)
 		if m.previewNavMode && m.previewFocusedElement == previewFocusDirectory {
 			dirStyle := PreviewContentStyle.Background(colors.SelectedBackground).Foreground(colors.SelectedText)
 			metadata = append(metadata, dirStyle.Render(dirLine))

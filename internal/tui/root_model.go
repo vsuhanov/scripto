@@ -307,6 +307,9 @@ func scriptDefaultWorkingDir(script *entities.Script) string {
 	if script.OriginalScope != "" {
 		return cwd
 	}
+	if services.IsPatternScope(script.Scope) {
+		return cwd
+	}
 	if script.Scope != "" && script.Scope != "global" && script.Scope != cwd {
 		return script.Scope
 	}

@@ -207,6 +207,21 @@ func (s *ScriptService) FindAllScopesScriptsWithArchived() ([]*entities.Script, 
 		seen[cwd] = true
 	}
 
+	var patternScopes []string
+	for scope := range s.config {
+		if !seen[scope] && IsPatternScope(scope) && ScopeMatchesDir(scope, cwd) {
+			patternScopes = append(patternScopes, scope)
+		}
+	}
+	sort.Strings(patternScopes)
+	for _, scope := range patternScopes {
+		for _, scriptEnt := range s.config[scope] {
+			scriptEnt.Scope = scope
+			mainScripts = append(mainScripts, scriptEnt)
+		}
+		seen[scope] = true
+	}
+
 	dir := cwd
 	for {
 		parent := filepath.Dir(dir)
@@ -270,9 +285,9 @@ func (s *ScriptService) ValidateScript(script *entities.Script) error {
 		return fmt.Errorf("scope cannot be empty")
 	}
 
-	if script.Scope != "global" {
+	if script.Scope != "global" && !IsPatternScope(script.Scope) {
 		if !filepath.IsAbs(script.Scope) {
-			return fmt.Errorf("scope must be 'global' or an absolute directory path")
+			return fmt.Errorf("scope must be 'global', a glob pattern, or an absolute directory path")
 		}
 	}
 
@@ -342,6 +357,9 @@ func (s *ScriptService) GetScopeDisplayName(scope string) string {
 	if scope == "global" {
 		return "global"
 	}
+	if IsPatternScope(scope) {
+		return scope
+	}
 	return filepath.Base(scope)
 }
 
@@ -400,6 +418,23 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 		}
 	}
 
+	var patternScopes []string
+	for scope := range s.config {
+		if scope != cwd && IsPatternScope(scope) && ScopeMatchesDir(scope, cwd) {
+			patternScopes = append(patternScopes, scope)
+		}
+	}
+	sort.Strings(patternScopes)
+	for _, scope := range patternScopes {
+		for _, scriptEnt := range s.config[scope] {
+			if scriptEnt.Archived {
+				continue
+			}
+			scriptEnt.Scope = scope
+			results = append(results, scriptEnt)
+		}
+	}
+
 	if scripts, exists := s.config["global"]; exists {
 		for _, scriptEnt := range scripts {
 			if scriptEnt.Archived {
@@ -416,7 +451,7 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 func (s *ScriptService) FindContextualScripts(contextualIDs map[string]bool, cwd string, alreadyInHierarchy map[string]bool) ([]*entities.Script, error) {
 	var results []*entities.Script
 	for scope, scripts := range s.config {
-		if scope == "global" || alreadyInHierarchy[scope] {
+		if scope == "global" || alreadyInHierarchy[scope] || (IsPatternScope(scope) && ScopeMatchesDir(scope, cwd)) {
 			continue
 		}
 		for _, scriptEnt := range scripts {
@@ -536,6 +571,13 @@ func (s *ScriptService) getScopePriority(scope string) int {
 
 	if scope == cwd {
 		return 0 // Local (current directory)
+	}
+
+	if IsPatternScope(scope) {
+		if ScopeMatchesDir(scope, cwd) {
+			return 0
+		}
+		return 3
 	}
 
 	if strings.HasPrefix(cwd, scope+string(filepath.Separator)) {

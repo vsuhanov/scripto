@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vsuhanov/scripto/entities"
+	"github.com/vsuhanov/scripto/internal/services"
 	"github.com/vsuhanov/scripto/internal/tui/colors"
 )
 
@@ -344,6 +345,13 @@ func getScopeType(scope string) string {
 
 	cwd, err := os.Getwd()
 	if err != nil {
+		return "other"
+	}
+
+	if services.IsPatternScope(scope) {
+		if services.ScopeMatchesDir(scope, cwd) {
+			return "local"
+		}
 		return "other"
 	}
 
