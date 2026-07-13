@@ -10,10 +10,12 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/vsuhanov/scripto/entities"
 	"github.com/vsuhanov/scripto/internal/services"
 	"github.com/vsuhanov/scripto/internal/storage"
+	"github.com/vsuhanov/scripto/internal/templatex"
 	"github.com/vsuhanov/scripto/internal/tui"
 	"github.com/vsuhanov/scripto/internal/tui/colors"
 
@@ -419,6 +421,13 @@ func markContextualIfApplicable(container *services.Container, script *entities.
 
 
 func handleCompletion(container *services.Container, args []string) {
+	if len(args) > 0 && args[0] == "--args" {
+		for _, suggestion := range getArgsCompletionSuggestions(container, strings.Join(args[1:], " ")) {
+			fmt.Println(suggestion)
+		}
+		return
+	}
+
 	showAll := false
 	for _, arg := range args {
 		if arg == "--more" {
@@ -491,6 +500,85 @@ func getCompletionSuggestions(container *services.Container, showAll bool) []str
 	}
 
 	return convertScriptResultsToSuggestions(sorted, separator)
+}
+
+func getArgsCompletionSuggestions(container *services.Container, scriptName string) []string {
+	separator := "\x1F"
+	if scriptName == "" || container.ExecutionHistoryService == nil {
+		return nil
+	}
+
+	script, err := container.ScriptService.Match(scriptName)
+	if err != nil || script == nil {
+		matches, mErr := container.ScriptService.MatchAllScopes(scriptName)
+		if mErr != nil || len(matches) != 1 {
+			return nil
+		}
+		script = matches[0]
+	}
+	if script.ID == "" {
+		return nil
+	}
+
+	records, err := container.ExecutionHistoryService.GetScriptHistory(script.ID, 100)
+	if err != nil {
+		return nil
+	}
+
+	var keyOrder []string
+	if script.FilePath != "" {
+		if content, rErr := os.ReadFile(script.FilePath); rErr == nil {
+			if metas, mErr := templatex.ExtractVariables(strings.TrimSpace(string(content))); mErr == nil {
+				for _, meta := range metas {
+					keyOrder = append(keyOrder, meta.Name)
+				}
+			}
+		}
+	}
+
+	seen := map[string]bool{}
+	var suggestions []string
+	for _, record := range records {
+		argsStr := buildArgsString(record.PlaceholderValues, keyOrder)
+		if argsStr == "" || seen[argsStr] {
+			continue
+		}
+		seen[argsStr] = true
+		desc := time.Unix(record.ExecutionTimestamp, 0).Format("2006-01-02 15:04")
+		suggestions = append(suggestions, argsStr+separator+desc)
+	}
+	return suggestions
+}
+
+func buildArgsString(values map[string]string, keyOrder []string) string {
+	var parts []string
+	used := map[string]bool{}
+	for _, key := range keyOrder {
+		if val, ok := values[key]; ok && val != "" {
+			parts = append(parts, fmt.Sprintf("--%s=%s", key, shellQuoteValue(val)))
+			used[key] = true
+		}
+	}
+	var rest []string
+	for key, val := range values {
+		if !used[key] && val != "" {
+			rest = append(rest, key)
+		}
+	}
+	sort.Strings(rest)
+	for _, key := range rest {
+		parts = append(parts, fmt.Sprintf("--%s=%s", key, shellQuoteValue(values[key])))
+	}
+	return strings.Join(parts, " ")
+}
+
+var safeArgValueRe = regexp.MustCompile(`^[a-zA-Z0-9_.,/:@%+=-]+$`)
+
+func shellQuoteValue(val string) string {
+	if safeArgValueRe.MatchString(val) {
+		return val
+	}
+	return "'" + strings.ReplaceAll(val, "'", `'\''`) + "'"
 }
 
 func convertScriptResultsToSuggestions(results []*entities.Script, separator string) []string {

@@ -11,6 +11,27 @@ __scripto_debug()
 _scripto() {
   local separator=$'\x1F'
   local out
+
+  local dashdash=${words[(ie)--]}
+  if (( dashdash < CURRENT )); then
+    local name="${(j: :)words[2,dashdash-1]}"
+    out=$(command scripto __complete --args "$name")
+
+    local -a comps display
+    while IFS=$separator read -r comp desc; do
+      [[ -z "$comp" ]] && continue
+      local displayName="$comp"
+      [[ -n "$desc" ]] && displayName="$comp -- $desc"
+      comps+=("$comp")
+      display+=("${displayName//:/\\:}")
+    done <<< "$out"
+
+    if [[ ${#comps} -gt 0 ]]; then
+      _describe -t history "history" display comps -l -X "%Bhistory%b" -o nosort -Q -U
+    fi
+    return
+  fi
+
   out=$(command scripto __complete --more)
 
   local -a comps display
