@@ -11,6 +11,61 @@ scripto_load_shortcuts() {
 
 scripto_load_shortcuts
 
+# Shell history tracking - armed by SCRIPTO_TRACK_HISTORY
+autoload -Uz add-zsh-hook
+zmodload -F zsh/datetime p:EPOCHSECONDS p:EPOCHREALTIME 2>/dev/null
+
+typeset -g _scripto_hist_id=""
+
+_scripto_should_record() {
+    local cmd="$1"
+    [[ "$cmd" == ' '* ]] && return 1
+    [[ -z "${cmd//[[:space:]]/}" ]] && return 1
+
+    local -a words
+    words=(${(z)cmd})
+    local first="${words[1]}"
+
+    if [[ -n "${aliases[$first]}" ]]; then
+        local -a expanded
+        expanded=(${(z)aliases[$first]})
+        first="${expanded[1]}"
+    fi
+
+    if [[ "$first" == "scripto" ]]; then
+        case "${words[2]}" in
+            ""|add|install|cli|completion|edit|help|--help|-h|--version|-v|--migrate|__*) return 1 ;;
+        esac
+        return 0
+    fi
+
+    local -a ignore
+    ignore=(${=SCRIPTO_HISTORY_IGNORE:-ls cd pwd clear exit history fg bg jobs})
+    (( ${ignore[(Ie)$first]} )) && return 1
+    return 0
+}
+
+_scripto_preexec() {
+    [[ -n "$SCRIPTO_TRACK_HISTORY" ]] || return
+    _scripto_should_record "$1" || return
+    _scripto_hist_id="$$-${EPOCHREALTIME}-${RANDOM}"
+    command scripto __record-history --id "$_scripto_hist_id" --cwd "$PWD" \
+        --session "$$" --started "$EPOCHSECONDS" -- "$1" >/dev/null 2>&1 &!
+}
+
+_scripto_precmd() {
+    local code=$?
+    [[ -n "$_scripto_hist_id" ]] || return
+    command scripto __record-history --id "$_scripto_hist_id" --exit "$code" \
+        --finished "$EPOCHSECONDS" >/dev/null 2>&1 &!
+    _scripto_hist_id=""
+}
+
+add-zsh-hook preexec _scripto_preexec
+# prepended rather than registered via add-zsh-hook so $? is read before any
+# other precmd hook (starship, p10k, vcs_info) overwrites it
+precmd_functions=(_scripto_precmd ${precmd_functions:#_scripto_precmd})
+
 scripto() {
     # Create a temporary file for command communication
     local cmd_file=$(mktemp)

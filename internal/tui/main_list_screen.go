@@ -653,17 +653,9 @@ func (m *MainListScreen) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "H":
-		if m.selectedScript != nil {
-			scriptID := m.selectedScript.ID
-			return m, func() tea.Msg {
-				return ShowExecutionHistoryMsg{scriptID: scriptID}
-			}
-		}
-		return m, nil
 	case "h":
 		return m, func() tea.Msg {
-			return ShowExecutionHistoryMsg{}
+			return ShowShellHistoryMsg{}
 		}
 	case "?":
 		m.showHelp = !m.showHelp
@@ -952,13 +944,19 @@ Navigation:
   
 Actions:
   ↵ (enter)    Execute selected script
+  x            Execute, choosing the working directory
   e            Edit script inline
   E            Edit script in external editor
   d            Archive script (with confirmation) / Unarchive if archived
   D            Archive script immediately / Unarchive if archived
   y            Copy command to clipboard
 
+Search:
+  /            Search scripts
+  \            Search scripts (alternate)
+
 Other:
+  h            Browse shell history
   S            Cycle scope view: current → all → all+archived
   ?            Toggle this help
   q, Ctrl+C    Quit

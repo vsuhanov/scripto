@@ -3,8 +3,12 @@ package tui
 import (
 	"fmt"
 	"log"
+	"os"
+	"strconv"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 	"github.com/vsuhanov/scripto/internal/services"
 )
 
@@ -31,6 +35,9 @@ func RunApp(container *services.Container, request TuiRequest) error {
 				log.Printf("RunApp: saving execution record scriptID=%q executedScript=%q", record.ScriptID, record.ExecutedScript)
 				container.ExecutionHistoryService.SaveExecution(*record)
 			}
+			if record != nil && container.ShellHistoryService != nil {
+				recordScriptoRun(container, record)
+			}
 			container.TerminalService.ExecuteCommand(cmd)
 		}
 		if saved := m.GetPendingSavedScript(); saved != nil {
@@ -39,4 +46,25 @@ func RunApp(container *services.Container, request TuiRequest) error {
 	}
 
 	return nil
+}
+
+func recordScriptoRun(container *services.Container, record *services.ExecutionRecord) {
+	if record.ExecutedScript == "" {
+		return
+	}
+	workingDir := record.WorkingDirectory
+	if workingDir == "" {
+		workingDir, _ = os.Getwd()
+	}
+	id := fmt.Sprintf("scripto-%s", uuid.New().String())
+	if err := container.ShellHistoryService.RecordStart(id, record.ExecutedScript, workingDir,
+		strconv.Itoa(os.Getppid()), services.ShellHistorySourceScripto, time.Now().Unix()); err != nil {
+		log.Printf("RunApp: failed to record shell history entry: %v", err)
+		return
+	}
+	if record.ScriptID != "" {
+		if err := container.ShellHistoryService.MarkSaved(id, record.ScriptID); err != nil {
+			log.Printf("RunApp: failed to link shell history entry to script: %v", err)
+		}
+	}
 }

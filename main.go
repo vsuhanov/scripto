@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	_ "embed"
 	"fmt"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"github.com/vsuhanov/scripto/internal/templatex"
 	"github.com/vsuhanov/scripto/internal/tui"
 	"github.com/vsuhanov/scripto/internal/tui/colors"
+	"github.com/vsuhanov/scripto/internal/utils"
 
 	"github.com/charmbracelet/lipgloss"
 	xterm "github.com/charmbracelet/x/term"
@@ -68,6 +70,10 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "__record-history" {
+		os.Exit(handleRecordHistory(os.Args[2:]))
 	}
 
 	container, err := services.NewContainer()
@@ -187,11 +193,17 @@ func handleInstall(args []string) error {
 
 	turbo := false
 	alias := ""
+	trackHistory := false
+	noTrackHistory := false
 	for i, arg := range args {
 		if arg == "--turbo" {
 			turbo = true
 		} else if arg == "--alias" && i+1 < len(args) {
 			alias = args[i+1]
+		} else if arg == "--track-history" {
+			trackHistory = true
+		} else if arg == "--no-track-history" {
+			noTrackHistory = true
 		}
 	}
 
@@ -199,6 +211,17 @@ func handleInstall(args []string) error {
 
 	if err := installShellIntegration(); err != nil {
 		return err
+	}
+
+	if !noTrackHistory {
+		if !trackHistory && utils.IsStdinTerminal() {
+			trackHistory = promptYesNo("Track shell command history? Records every command you run (and where) into scripto.")
+		}
+		if trackHistory {
+			if err := installHistoryTracking(); err != nil {
+				return err
+			}
+		}
 	}
 
 	if turbo {
@@ -238,6 +261,34 @@ func installShellIntegration() error {
 	}
 	printInstallStep("Updated", zshrcPath)
 
+	return nil
+}
+
+func promptYesNo(question string) bool {
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  %s [y/N]: ", question)
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	response = strings.ToLower(strings.TrimSpace(response))
+	return response == "y" || response == "yes"
+}
+
+func installHistoryTracking() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	zshrcPath := filepath.Join(homeDir, ".zshrc")
+	if err := addLineToZshrc(zshrcPath, "export SCRIPTO_TRACK_HISTORY=1"); err != nil {
+		return fmt.Errorf("failed to enable history tracking: %w", err)
+	}
+	printInstallStep("Enabled shell history tracking", zshrcPath)
+	printInstallNote("Browse it with `h` in the scripto TUI")
+	printInstallNote("To turn it off, remove `export SCRIPTO_TRACK_HISTORY=1` from ~/.zshrc")
 	return nil
 }
 

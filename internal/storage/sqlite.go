@@ -30,7 +30,7 @@ func OpenSQLite() (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to create sqlite directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open sqlite: %w", err)
 	}

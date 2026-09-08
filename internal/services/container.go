@@ -11,6 +11,7 @@ type Container struct {
 	TerminalService        *TerminalService
 	HistoryService         *HistoryService
 	ExecutionHistoryService *ExecutionHistoryService
+	ShellHistoryService     *ShellHistoryService
 }
 
 func NewContainer() (*Container, error) {
@@ -29,6 +30,15 @@ func NewContainer() (*Container, error) {
 		log.Printf("Container: execution history service initialized")
 	}
 
+	var shellHistoryService *ShellHistoryService
+	if executionHistoryService != nil {
+		shellHistoryService = NewShellHistoryServiceWithDB(executionHistoryService.db)
+	} else if svc, err := NewShellHistoryService(); err != nil {
+		log.Printf("Warning: failed to initialize shell history service: %v", err)
+	} else {
+		shellHistoryService = svc
+	}
+
 	return &Container{
 		ScriptService:    scriptService,
 		ExecutionService: NewExecutionService(),
@@ -37,5 +47,6 @@ func NewContainer() (*Container, error) {
 		}),
 		HistoryService:          NewHistoryService(),
 		ExecutionHistoryService: executionHistoryService,
+		ShellHistoryService:     shellHistoryService,
 	}, nil
 }

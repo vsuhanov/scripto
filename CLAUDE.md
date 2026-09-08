@@ -171,8 +171,27 @@ Each Script object contains:
 ## Environment Variables
 
 ### SCRIPTO_SHELL_HISTORY_FILE_PATH
-- **Purpose**: Source of truth for command history in TUI screens
-- **Usage**: Shell wrapper sets this to provide command history to history selection screens
+- **Purpose**: Source of truth for the `scripto add` command picker
+- **Usage**: Shell wrapper sets this for bare `scripto add` only, from `fc -l -100`
 - **Format**: File contains fc output format: "  123  command here" with line numbers
-- **Important**: ALL history screens MUST read from this variable, not directly from shell history files
-- **Implementation**: Used by `internal/tui/history_screen.go` for consistent history access 
+- **Important**: The add picker MUST read from this variable, not directly from shell history files
+- **Implementation**: Used by `internal/tui/shell_command_history_screen.go` via `HistoryService`
+
+### SCRIPTO_TRACK_HISTORY
+- **Purpose**: Arms the zsh `preexec`/`precmd` hooks that record every command into `shell_history`
+- **Usage**: Set to any non-empty value in `~/.zshrc`; `scripto install` offers to add it
+- **Implementation**: Hooks live in `commands/scripts/scripto.zsh`, call `scripto __record-history` detached
+
+### SCRIPTO_HISTORY_IGNORE
+- **Purpose**: Space-separated command names the tracking hook skips (replaces the default list)
+- **Default**: `ls cd pwd clear exit history fg bg jobs`
+- **Note**: Commands prefixed with a space are always skipped, as are scripto's own management verbs
+
+### SCRIPTO_HISTORY_RETENTION_DAYS
+- **Purpose**: How long tracked shell history is kept; pruned when the history screen opens
+- **Default**: 90. Entries saved as scripts are never pruned.
+
+### SCRIPTO_SQLITE_DB_PATH
+- **Purpose**: Overrides the SQLite database location (execution history + shell history)
+- **Default**: `~/.scripto/scripto.sqlite`
+- **Testing**: Set this alongside SCRIPTO_CONFIG so tests never touch the real database 

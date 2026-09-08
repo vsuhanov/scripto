@@ -102,6 +102,31 @@ For full functionality, you need to install the shell wrapper function:
 source ~/.scripto/completion.zsh
 ```
 
+#### Shell History Tracking (optional)
+
+`scripto install` offers to track your shell command history:
+
+```
+Track shell command history? Records every command you run (and where) into scripto. [y/N]
+```
+
+Saying yes adds `export SCRIPTO_TRACK_HISTORY=1` to your `~/.zshrc`, which arms a `preexec`/`precmd`
+hook pair. Every command you run is recorded — with its working directory, exit code, and duration —
+into scripto's SQLite database. These commands never enter script matching or completion; press `h`
+in the TUI to browse them, and `enter` on any row to turn it into a real scripto script.
+
+Skip the prompt with `--track-history` or `--no-track-history` for scripted installs.
+
+Not recorded: commands prefixed with a space (the usual `HIST_IGNORE_SPACE` escape hatch), scripto's
+own management verbs (`scripto`, `scripto add`, `scripto install`, `scripto cli`), and trivial
+commands (`ls`, `cd`, `pwd`, `clear`, `exit`, `history`, `fg`, `bg`, `jobs` — override the list with
+`SCRIPTO_HISTORY_IGNORE`). Actual script runs like `scripto deploy` *are* recorded.
+
+History older than `SCRIPTO_HISTORY_RETENTION_DAYS` (default 90) is pruned when the history screen
+opens; entries you saved as scripts are kept.
+
+To turn tracking off, remove `export SCRIPTO_TRACK_HISTORY=1` from `~/.zshrc`.
+
 #### Installing with Custom Names
 
 Scripto supports installing under different command names for faster access:

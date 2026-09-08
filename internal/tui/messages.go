@@ -104,9 +104,7 @@ type HistoryCommandSelectedMsg struct {
 	command string
 }
 
-type ShowExecutionHistoryMsg struct {
-	scriptID string
-}
+type ShowShellHistoryMsg struct{}
 
 type PendingExecutionHistoryRecord struct {
 	record services.ExecutionRecord

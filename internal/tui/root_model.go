@@ -233,10 +233,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if mainList, ok := m.currentScreen.(*MainListScreen); ok {
 				mainList.RefreshScripts()
 			}
-			if model, ok := m.currentScreen.(tea.Model); ok {
-				return m, model.Init()
+			var markCmd tea.Cmd
+			if shellHistory, ok := m.currentScreen.(*ShellHistoryScreen); ok && msg.script != nil {
+				markCmd = shellHistory.MarkPendingSaved(msg.script.ID)
 			}
-			return m, nil
+			if model, ok := m.currentScreen.(tea.Model); ok {
+				return m, tea.Sequence(markCmd, model.Init())
+			}
+			return m, markCmd
 		}
 		m.pendingSavedScript = msg.script
 		m.pendingSavedCommand = msg.command
@@ -255,11 +259,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentScreen = historyScreen
 		return m, historyScreen.Init()
 
-	case ShowExecutionHistoryMsg:
-		execHistoryScreen := NewExecutionHistoryScreen(m.container, msg.scriptID, m.width, m.height)
+	case ShowShellHistoryMsg:
+		shellHistoryScreen := NewShellHistoryScreen(m.container, m.width, m.height)
 		m.screenStack = append(m.screenStack, m.currentScreen)
-		m.currentScreen = execHistoryScreen
-		return m, execHistoryScreen.Init()
+		m.currentScreen = shellHistoryScreen
+		return m, shellHistoryScreen.Init()
 
 	case NavigateBackMsg:
 		if len(m.screenStack) > 0 {
