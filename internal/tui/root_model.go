@@ -148,6 +148,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.showExecutionForm(msg.script, msg.scriptArgs, msg.fromCLI)
 
 	case ShowScriptExecutionWithWorkingDirMsg:
+		realScope := msg.script.Scope
+		if msg.script.OriginalScope != "" {
+			realScope = msg.script.OriginalScope
+		}
+		if getScopeType(realScope) == "global" {
+			return m, m.handleExecuteScript(msg.script, msg.scriptArgs, true)
+		}
 		return m, m.showExecutionForm(msg.script, msg.scriptArgs, false)
 
 	case CopyScriptToClipboardMsg:

@@ -181,11 +181,25 @@ func NewPlaceholderForm(script *entities.Script, placeholders []templatex.Variab
 	}
 	wdInput.SetValue(workingDir)
 
-	workingDirFocused := true
-	wdInput.Focus()
+	showWorkingDir := true
+	if script != nil {
+		realScope := script.Scope
+		if script.OriginalScope != "" {
+			realScope = script.OriginalScope
+		}
+		if realScope == "global" {
+			showWorkingDir = false
+			cwd, _ := os.Getwd()
+			wdInput.SetValue(cwd)
+		}
+	}
+
+	workingDirFocused := false
 	if len(fields) > 0 {
 		fields[0].Focus()
-		workingDirFocused = false
+	} else if showWorkingDir {
+		workingDirFocused = true
+		wdInput.Focus()
 	}
 
 	vpWidth := width - 6
@@ -208,7 +222,7 @@ func NewPlaceholderForm(script *entities.Script, placeholders []templatex.Variab
 		originalScript:    originalScript,
 		historyFocused:    false,
 		historyLoaded:     false,
-		showWorkingDir:    true,
+		showWorkingDir:    showWorkingDir,
 		workingDirInput:   wdInput,
 		workingDirFocused: workingDirFocused,
 	}
@@ -269,10 +283,7 @@ func (m PlaceholderFormModel) loadHistory() tea.Cmd {
 
 func (m PlaceholderFormModel) buildHistoryTable(records []services.ExecutionRecord, width int) table.Model {
 	timeWidth := 17
-	wdWidth := 0
-	if m.showWorkingDir {
-		wdWidth = 15
-	}
+	wdWidth := 15
 
 	placeholderWidths := make([]int, len(m.placeholders))
 	for i, p := range m.placeholders {
@@ -287,17 +298,12 @@ func (m PlaceholderFormModel) buildHistoryTable(records []services.ExecutionReco
 	}
 
 	cols := []table.Column{{Title: "Time", Width: timeWidth}}
-	if m.showWorkingDir {
-		cols = append(cols, table.Column{Title: "Working Dir", Width: wdWidth})
-	}
+	cols = append(cols, table.Column{Title: "Working Dir", Width: wdWidth})
 	for i, p := range m.placeholders {
 		cols = append(cols, table.Column{Title: p.Name, Width: placeholderWidths[i] + 2})
 	}
 
-	usedWidth := timeWidth + 2 + wdWidth
-	if wdWidth > 0 {
-		usedWidth += 2
-	}
+	usedWidth := timeWidth + 2 + wdWidth + 2
 	for i := range m.placeholders {
 		usedWidth += placeholderWidths[i] + 2 + 2
 	}
@@ -311,13 +317,11 @@ func (m PlaceholderFormModel) buildHistoryTable(records []services.ExecutionReco
 	for i, r := range records {
 		ts := time.Unix(r.ExecutionTimestamp, 0).Format("2006-01-02 15:04")
 		row := table.Row{ts}
-		if m.showWorkingDir {
-			wd := filepath.Base(r.WorkingDirectory)
-			if len(wd) > wdWidth {
-				wd = wd[:wdWidth-1] + "…"
-			}
-			row = append(row, wd)
+		wd := filepath.Base(r.WorkingDirectory)
+		if len(wd) > wdWidth {
+			wd = wd[:wdWidth-1] + "…"
 		}
+		row = append(row, wd)
 		for _, p := range m.placeholders {
 			row = append(row, r.PlaceholderValues[p.Name])
 		}
