@@ -35,9 +35,13 @@ func (r ShellHistoryRecord) Duration() time.Duration {
 }
 
 type ShellHistoryQuery struct {
+	// Filter is a Go regexp matched against the command text. Callers are
+	// responsible for prefixing "(?i)" if they want a case-insensitive match,
+	// and for validating the pattern compiles before querying.
 	Filter           string
 	WorkingDirectory string
 	FailuresOnly     bool
+	ExcludeSources   []string
 	Limit            int
 	Offset           int
 }
@@ -107,8 +111,8 @@ func (s *ShellHistoryService) GetHistory(query ShellHistoryQuery) ([]ShellHistor
 	conditions = append(conditions, "command != ''")
 
 	if query.Filter != "" {
-		conditions = append(conditions, "command LIKE ?")
-		args = append(args, "%"+query.Filter+"%")
+		conditions = append(conditions, "command REGEXP ?")
+		args = append(args, query.Filter)
 	}
 	if query.WorkingDirectory != "" {
 		conditions = append(conditions, "working_directory = ?")
@@ -116,6 +120,14 @@ func (s *ShellHistoryService) GetHistory(query ShellHistoryQuery) ([]ShellHistor
 	}
 	if query.FailuresOnly {
 		conditions = append(conditions, "exit_code IS NOT NULL AND exit_code != 0")
+	}
+	if len(query.ExcludeSources) > 0 {
+		placeholders := make([]string, len(query.ExcludeSources))
+		for i, source := range query.ExcludeSources {
+			placeholders[i] = "?"
+			args = append(args, source)
+		}
+		conditions = append(conditions, fmt.Sprintf("source NOT IN (%s)", strings.Join(placeholders, ", ")))
 	}
 
 	limit := query.Limit

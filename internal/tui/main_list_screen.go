@@ -537,6 +537,21 @@ func (m *MainListScreen) handlePreviewNavKeys(msg tea.KeyMsg) (tea.Model, tea.Cm
 	return m, nil
 }
 
+func (m *MainListScreen) moveSelection(delta int) {
+	items := m.buildListItems()
+	if len(items) == 0 {
+		return
+	}
+	step := func(index int) int {
+		return ((index+delta)%len(items) + len(items)) % len(items)
+	}
+	m.selectedItemIndex = step(m.selectedItemIndex)
+	if items[m.selectedItemIndex].script == nil && items[m.selectedItemIndex].scope == "global" {
+		m.selectedItemIndex = step(m.selectedItemIndex)
+	}
+	m.updateSelectedScript()
+}
+
 func (m *MainListScreen) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
@@ -552,25 +567,11 @@ func (m *MainListScreen) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	case "tab":
 		m.searchInput.Blur()
 		return m, nil
-	case "ctrl+n":
-		items := m.buildListItems()
-		if len(items) > 0 {
-			m.selectedItemIndex = (m.selectedItemIndex + 1) % len(items)
-			if items[m.selectedItemIndex].script == nil && items[m.selectedItemIndex].scope == "global" {
-				m.selectedItemIndex = (m.selectedItemIndex + 1) % len(items)
-			}
-			m.updateSelectedScript()
-		}
+	case "down", "ctrl+n":
+		m.moveSelection(1)
 		return m, nil
-	case "ctrl+p":
-		items := m.buildListItems()
-		if len(items) > 0 {
-			m.selectedItemIndex = (m.selectedItemIndex - 1 + len(items)) % len(items)
-			if items[m.selectedItemIndex].script == nil && items[m.selectedItemIndex].scope == "global" {
-				m.selectedItemIndex = (m.selectedItemIndex - 1 + len(items)) % len(items)
-			}
-			m.updateSelectedScript()
-		}
+	case "up", "ctrl+p":
+		m.moveSelection(-1)
 		return m, nil
 	default:
 		var cmd tea.Cmd
