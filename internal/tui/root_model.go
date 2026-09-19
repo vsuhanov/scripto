@@ -57,6 +57,7 @@ type RootModel struct {
 	pendingPlaceholderAction         string
 	pendingPlaceholderOriginalScript string
 	pendingPlaceholderWorkingDir     string
+	pendingRawCommand                string
 	pendingSavedScript               *entities.Script
 	pendingSavedCommand              string
 }
@@ -160,12 +161,22 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CopyScriptToClipboardMsg:
 		return m, m.handleCopyScriptToClipboard(msg.script)
 
+	case ShowRawCommandExecutionMsg:
+		return m, func() tea.Msg {
+			return ShowPlaceholderFormMsg{
+				action:     "execute",
+				workingDir: msg.workingDir,
+				rawCommand: msg.command,
+			}
+		}
+
 	case ShowPlaceholderFormMsg:
 		m.pendingPlaceholderScript = msg.script
 		m.pendingPlaceholderAction = msg.action
 		m.pendingPlaceholderOriginalScript = msg.originalScript
 		m.pendingPlaceholderWorkingDir = msg.workingDir
-		form := NewPlaceholderForm(msg.script, msg.placeholders, m.width, m.height, m.container, msg.originalScript, msg.workingDir)
+		m.pendingRawCommand = msg.rawCommand
+		form := NewPlaceholderForm(msg.script, msg.placeholders, m.width, m.height, m.container, msg.originalScript, msg.workingDir, msg.rawCommand)
 		m.screenStack = append(m.screenStack, m.currentScreen)
 		m.currentScreen = form
 		return m, form.Init()
@@ -180,17 +191,23 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingPlaceholderAction = ""
 			m.pendingPlaceholderOriginalScript = ""
 			m.pendingPlaceholderWorkingDir = ""
+			m.pendingRawCommand = ""
 			return m, func() tea.Msg { return StatusMsg("Cancelled") }
 		}
 		script := m.pendingPlaceholderScript
 		action := m.pendingPlaceholderAction
 		originalScript := m.pendingPlaceholderOriginalScript
+		rawCommand := m.pendingRawCommand
 		m.pendingPlaceholderScript = nil
 		m.pendingPlaceholderAction = ""
 		m.pendingPlaceholderOriginalScript = ""
 		m.pendingPlaceholderWorkingDir = ""
+		m.pendingRawCommand = ""
+		if script == nil {
+			return m, m.finalizeRawExecute(rawCommand, msg.commandOverride, msg.workingDir)
+		}
 		if action == "execute" {
-			return m, m.finalizeExecute(script, msg.values, originalScript, msg.workingDir)
+			return m, m.finalizeExecute(script, msg.values, originalScript, msg.workingDir, msg.commandOverride)
 		}
 		return m, m.finalizeCopy(script, msg.values)
 
@@ -431,11 +448,15 @@ func (m *RootModel) handleCopyScriptToClipboard(script *entities.Script) tea.Cmd
 	}
 }
 
-func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]string, originalScript string, workingDir string) tea.Cmd {
+func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]string, originalScript string, workingDir string, commandOverride string) tea.Cmd {
 	return func() tea.Msg {
-		finalCommand, err := m.container.ExecutionService.PrepareExecution(script, []string{}, values)
-		if err != nil {
-			return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
+		finalCommand := commandOverride
+		if finalCommand == "" {
+			var err error
+			finalCommand, err = m.container.ExecutionService.PrepareExecution(script, []string{}, values)
+			if err != nil {
+				return ErrorMsg(fmt.Errorf("failed to prepare script execution: %w", err))
+			}
 		}
 		cwd, _ := os.Getwd()
 		if workingDir != "" && workingDir != cwd {
@@ -443,6 +464,20 @@ func (m *RootModel) finalizeExecute(script *entities.Script, values map[string]s
 		}
 		record := m.buildHistoryRecord(script, finalCommand, originalScript, values)
 		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand, script.Name, values, workingDir, true), historyRecord: record}
+	}
+}
+
+func (m *RootModel) finalizeRawExecute(rawCommand string, commandOverride string, workingDir string) tea.Cmd {
+	return func() tea.Msg {
+		finalCommand := rawCommand
+		if commandOverride != "" {
+			finalCommand = commandOverride
+		}
+		cwd, _ := os.Getwd()
+		if workingDir != "" && workingDir != cwd {
+			finalCommand = "cd " + shellQuote(workingDir) + " && " + finalCommand
+		}
+		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand, "", nil, workingDir, false)}
 	}
 }
 

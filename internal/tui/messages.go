@@ -121,12 +121,19 @@ type ShowPlaceholderFormMsg struct {
 	placeholders   []templatex.VariableMeta
 	originalScript string
 	workingDir     string
+	rawCommand     string
 }
 
 type PlaceholderFormDoneMsg struct {
-	values     map[string]string
+	values          map[string]string
+	workingDir      string
+	commandOverride string
+	cancelled       bool
+}
+
+type ShowRawCommandExecutionMsg struct {
+	command    string
 	workingDir string
-	cancelled  bool
 }
 
 type ScriptEditorResult struct {

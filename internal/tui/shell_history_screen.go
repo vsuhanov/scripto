@@ -390,12 +390,8 @@ func (s *ShellHistoryScreen) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.C
 		return s, nil
 
 	case "enter":
-		record, ok := s.selected()
-		if !ok {
-			return s, nil
-		}
-		s.pendingSaveID = record.ID
-		return s, s.saveAsScript(record)
+		s.filterInput.Blur()
+		return s, nil
 
 	case "down", "ctrl+n":
 		s.moveCursor(1)
@@ -473,20 +469,27 @@ func (s *ShellHistoryScreen) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		s.moveCursor(-s.visibleRows() / 2)
 		return s, nil
 
-	case "enter", "s":
+	case "enter", "x":
+		record, ok := s.selected()
+		if !ok {
+			return s, nil
+		}
+		return s, s.reExecute(record)
+
+	case "X":
+		record, ok := s.selected()
+		if !ok {
+			return s, nil
+		}
+		return s, s.showExecutionForm(record)
+
+	case "a":
 		record, ok := s.selected()
 		if !ok {
 			return s, nil
 		}
 		s.pendingSaveID = record.ID
 		return s, s.saveAsScript(record)
-
-	case "x":
-		record, ok := s.selected()
-		if !ok {
-			return s, nil
-		}
-		return s, s.reExecute(record)
 
 	case "d":
 		record, ok := s.selected()
@@ -518,13 +521,18 @@ func (s *ShellHistoryScreen) saveAsScript(record services.ShellHistoryRecord) te
 
 func (s *ShellHistoryScreen) reExecute(record services.ShellHistoryRecord) tea.Cmd {
 	return func() tea.Msg {
-		command := record.Command
-		if record.WorkingDirectory != "" && record.WorkingDirectory != s.cwd {
-			command = "cd " + shellQuote(record.WorkingDirectory) + " && " + command
-		}
 		return ExecuteAppCommandMsg{
 			command: s.container.TerminalService.PrepareScriptExecution(
-				command, "", nil, record.WorkingDirectory, false),
+				record.Command, "", nil, s.cwd, false),
+		}
+	}
+}
+
+func (s *ShellHistoryScreen) showExecutionForm(record services.ShellHistoryRecord) tea.Cmd {
+	return func() tea.Msg {
+		return ShowRawCommandExecutionMsg{
+			command:    record.Command,
+			workingDir: record.WorkingDirectory,
 		}
 	}
 }
@@ -631,7 +639,7 @@ func (s *ShellHistoryScreen) View() string {
 	}
 
 	detailPane := PreviewStyle.Width(s.width - 2).Render(s.detailVP.View())
-	footer := HelpStyle.Render("j/k: navigate • enter/s: save as script • x: run • d: delete • /: search • \\: resume • f: this dir • F: failures • q/esc: back")
+	footer := HelpStyle.Render("j/k: navigate • enter/x: run in cwd • X: run with options • a: add as script • d: delete • /: search • \\: resume • f: this dir • F: failures • q/esc: back")
 
 	return lipgloss.JoinVertical(lipgloss.Left, header, s.renderList(), detailPane, footer)
 }
