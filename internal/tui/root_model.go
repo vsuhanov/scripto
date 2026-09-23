@@ -477,7 +477,10 @@ func (m *RootModel) finalizeRawExecute(rawCommand string, commandOverride string
 		if workingDir != "" && workingDir != cwd {
 			finalCommand = "cd " + shellQuote(workingDir) + " && " + finalCommand
 		}
-		return ExecuteAppCommandMsg{command: m.container.TerminalService.PrepareScriptExecution(finalCommand, "", nil, workingDir, false)}
+		return ExecuteAppCommandMsg{
+			command:       m.container.TerminalService.PrepareScriptExecution(finalCommand, "", nil, workingDir, true),
+			historyRecord: &services.ExecutionRecord{ExecutedScript: finalCommand, WorkingDirectory: workingDir},
+		}
 	}
 }
 

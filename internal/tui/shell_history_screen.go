@@ -523,7 +523,8 @@ func (s *ShellHistoryScreen) reExecute(record services.ShellHistoryRecord) tea.C
 	return func() tea.Msg {
 		return ExecuteAppCommandMsg{
 			command: s.container.TerminalService.PrepareScriptExecution(
-				record.Command, "", nil, s.cwd, false),
+				record.Command, "", nil, s.cwd, true),
+			historyRecord: &services.ExecutionRecord{ExecutedScript: record.Command, WorkingDirectory: s.cwd},
 		}
 	}
 }

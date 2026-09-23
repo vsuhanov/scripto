@@ -149,13 +149,17 @@ func (ts *TerminalService) executeScriptCommand(command, name string, placeholde
 		if name != "" {
 			content += "printf " + shellescape("\\e]2;scripto "+name+"\\a") + "\n"
 		}
-		if writeHistory && name != "" {
-			cwd, _ := os.Getwd()
-			richEntry := buildRichHistoryEntry(name, placeholderValues, workingDir, cwd)
-			if richEntry != "" {
-				content += "\nprint -s " + shellescape(richEntry)
+		if writeHistory {
+			if name != "" {
+				cwd, _ := os.Getwd()
+				richEntry := buildRichHistoryEntry(name, placeholderValues, workingDir, cwd)
+				if richEntry != "" {
+					content += "\nprint -s " + shellescape(richEntry)
+				} else {
+					content += "\nprint -s " + shellescape("scripto "+name)
+				}
 			} else {
-				content += "\nprint -s " + shellescape("scripto "+name)
+				content += "\nprint -s " + shellescape(command)
 			}
 			content += "\n"
 		}

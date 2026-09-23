@@ -31,7 +31,7 @@ func RunApp(container *services.Container, request TuiRequest) error {
 		if cmd != nil {
 			record := m.GetPendingHistoryRecord()
 			log.Printf("RunApp: pendingHistoryRecord=%v, ExecutionHistoryService=%v", record != nil, container.ExecutionHistoryService != nil)
-			if record != nil && container.ExecutionHistoryService != nil {
+			if record != nil && record.ScriptID != "" && container.ExecutionHistoryService != nil {
 				log.Printf("RunApp: saving execution record scriptID=%q executedScript=%q", record.ScriptID, record.ExecutedScript)
 				container.ExecutionHistoryService.SaveExecution(*record)
 			}
