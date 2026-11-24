@@ -12,40 +12,53 @@ import (
 	"github.com/vsuhanov/scripto/internal/services"
 )
 
-func RunApp(container *services.Container, request TuiRequest) error {
+func RunApp(container *services.Container, request TuiRequest) (int, error) {
 	rootModel, err := NewRootModel(container, request)
 	if err != nil {
-		return err
+		return ExitError, err
 	}
 
 	program := tea.NewProgram(rootModel, tea.WithAltScreen())
 	finalModel, err := program.Run()
-
 	if err != nil {
-		return fmt.Errorf("TUI error: %w", err)
+		return ExitError, fmt.Errorf("TUI error: %w", err)
 	}
 
-	if m, ok := finalModel.(RootModel); ok {
-		cmd := m.GetPendingCommand()
-		log.Printf("RunApp: pendingCommand=%T", cmd)
-		if cmd != nil {
-			record := m.GetPendingHistoryRecord()
-			log.Printf("RunApp: pendingHistoryRecord=%v, ExecutionHistoryService=%v", record != nil, container.ExecutionHistoryService != nil)
-			if record != nil && record.ScriptID != "" && container.ExecutionHistoryService != nil {
-				log.Printf("RunApp: saving execution record scriptID=%q executedScript=%q", record.ScriptID, record.ExecutedScript)
+	var m *RootModel
+	switch fm := finalModel.(type) {
+	case RootModel:
+		m = &fm
+	case *RootModel:
+		m = fm
+	default:
+		return ExitBuiltinComplete, nil
+	}
+
+	code := ExitBuiltinComplete
+	if cmd := m.GetPendingCommand(); cmd != nil {
+		if record := m.GetPendingHistoryRecord(); record != nil {
+			if record.ID == "" {
+				record.ID = uuid.New().String()
+			}
+			container.TerminalService.SetExecutionID(cmd, record.ID)
+			if record.ScriptID != "" && container.ExecutionHistoryService != nil {
 				container.ExecutionHistoryService.SaveExecution(*record)
 			}
-			if record != nil && container.ShellHistoryService != nil {
+			if container.ShellHistoryService != nil {
 				recordScriptoRun(container, record)
 			}
-			container.TerminalService.ExecuteCommand(cmd)
 		}
-		if saved := m.GetPendingSavedScript(); saved != nil {
-			container.TerminalService.PrintScriptSavedBox(saved.Name, saved.Scope, GetScopeColorHex(saved.Scope), m.GetPendingSavedCommand())
-		}
+		code = container.TerminalService.ExecuteCommand(cmd)
+	}
+	if saved := m.GetPendingSavedScript(); saved != nil {
+		container.TerminalService.PrintScriptSavedBox(saved.Name, saved.Scope, GetScopeColorHex(saved.Scope), m.GetPendingSavedCommand())
 	}
 
-	return nil
+	return code, nil
+}
+
+func ScriptoRunHistoryID(executionID string) string {
+	return "scripto-" + executionID
 }
 
 func recordScriptoRun(container *services.Container, record *services.ExecutionRecord) {
@@ -56,7 +69,7 @@ func recordScriptoRun(container *services.Container, record *services.ExecutionR
 	if workingDir == "" {
 		workingDir, _ = os.Getwd()
 	}
-	id := fmt.Sprintf("scripto-%s", uuid.New().String())
+	id := ScriptoRunHistoryID(record.ID)
 	if err := container.ShellHistoryService.RecordStart(id, record.ExecutedScript, workingDir,
 		strconv.Itoa(os.Getppid()), services.ShellHistorySourceScripto, time.Now().Unix()); err != nil {
 		log.Printf("RunApp: failed to record shell history entry: %v", err)

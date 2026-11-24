@@ -125,6 +125,10 @@ type ShowPlaceholderFormMsg struct {
 }
 
 type PlaceholderFormDoneMsg struct {
+	script          *entities.Script
+	action          string
+	originalScript  string
+	rawCommand      string
 	values          map[string]string
 	workingDir      string
 	commandOverride string
@@ -149,4 +153,3 @@ func readScriptFile(filePath string) (string, error) {
 	}
 	return string(content), nil
 }
-

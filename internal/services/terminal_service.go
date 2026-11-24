@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/vsuhanov/scripto/internal/tui/colors"
@@ -12,7 +13,6 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 )
 
-type osExitFunc func(code int)
 type osWriteFileFunc func(name string, data []byte, perm os.FileMode) error
 
 type exitCode int
@@ -31,6 +31,7 @@ type ExitCommand struct {
 }
 
 type ExecuteScriptCommand struct {
+	ExecutionID       string
 	Command           string
 	Name              string
 	PlaceholderValues map[string]string
@@ -44,18 +45,17 @@ type EditScriptExternalCommand struct {
 
 type TerminalServiceOptions struct {
 	targetCommandFile string
+	executionIDFile   string
 }
 
 type TerminalService struct {
 	options       TerminalServiceOptions
-	exitFunc      osExitFunc
 	writeFileFunc osWriteFileFunc
 }
 
 func NewTerminalService(options TerminalServiceOptions) *TerminalService {
 	return &TerminalService{
 		options:       options,
-		exitFunc:      os.Exit,
 		writeFileFunc: os.WriteFile,
 	}
 }
@@ -68,23 +68,26 @@ func (ts *TerminalService) PrepareScriptExecution(command, name string, placehol
 	return &ExecuteScriptCommand{Command: command, Name: name, PlaceholderValues: placeholderValues, WorkingDir: workingDir, WriteHistory: writeHistory}
 }
 
+func (ts *TerminalService) SetExecutionID(cmd TerminalServiceCommand, id string) {
+	if c, ok := cmd.(*ExecuteScriptCommand); ok {
+		c.ExecutionID = id
+	}
+}
+
 func (ts *TerminalService) PrepareExternalEditing(scriptPath string) TerminalServiceCommand {
 	return &EditScriptExternalCommand{ScriptPath: scriptPath}
 }
 
-func (ts *TerminalService) ExecuteCommand(cmd TerminalServiceCommand) {
-	if cmd == nil {
-		return
-	}
-
+func (ts *TerminalService) ExecuteCommand(cmd TerminalServiceCommand) int {
 	switch c := cmd.(type) {
 	case *ExitCommand:
-		ts.exitFunc(c.Code)
+		return c.Code
 	case *ExecuteScriptCommand:
-		ts.executeScriptCommand(c.Command, c.Name, c.PlaceholderValues, c.WorkingDir, c.WriteHistory)
+		return ts.executeScriptCommand(c)
 	case *EditScriptExternalCommand:
-		ts.editScriptExternalCommand(c.ScriptPath)
+		return ts.editScriptExternalCommand(c.ScriptPath)
 	}
+	return int(exitCodeBuiltinComplete)
 }
 
 func (ts *TerminalService) PrintScriptSavedBox(name, scope, scopeColor, command string) {
@@ -139,69 +142,70 @@ func printScriptBox(command, name string) {
 	fmt.Fprintln(os.Stderr, boxStyle.Render(content))
 }
 
-func (ts *TerminalService) executeScriptCommand(command, name string, placeholderValues map[string]string, workingDir string, writeHistory bool) {
+func (ts *TerminalService) executeScriptCommand(c *ExecuteScriptCommand) int {
 	if utils.IsStderrTerminal() {
-		printScriptBox(command, name)
+		printScriptBox(c.Command, c.Name)
 	}
 	cmdFdPath := ts.options.targetCommandFile
-	if cmdFdPath != "" {
-		content := ""
-		if name != "" {
-			content += "printf " + shellescape("\\e]2;scripto "+name+"\\a") + "\n"
-		}
-		if writeHistory {
-			if name != "" {
-				cwd, _ := os.Getwd()
-				richEntry := buildRichHistoryEntry(name, placeholderValues, workingDir, cwd)
-				if richEntry != "" {
-					content += "\nprint -s " + shellescape(richEntry)
-				} else {
-					content += "\nprint -s " + shellescape("scripto "+name)
-				}
-			} else {
-				content += "\nprint -s " + shellescape(command)
-			}
-			content += "\n"
-		}
-		content += command
-		_ = ts.writeFileFunc(cmdFdPath, []byte(content), 0600)
-	} else {
-		fmt.Print(command)
+	if cmdFdPath == "" {
+		fmt.Print(c.Command)
+		return int(exitCodeSuccess)
 	}
-	ts.exitFunc(int(exitCodeSuccess))
+
+	content := ""
+	if c.Name != "" {
+		content += "printf " + utils.ShellQuote("\\e]2;scripto "+c.Name+"\\a") + "\n"
+	}
+	if c.WriteHistory {
+		if c.Name != "" {
+			cwd, _ := os.Getwd()
+			richEntry := buildRichHistoryEntry(c.Name, c.PlaceholderValues, c.WorkingDir, cwd)
+			if richEntry != "" {
+				content += "\nprint -s " + utils.ShellQuote(richEntry)
+			} else {
+				content += "\nprint -s " + utils.ShellQuote("scripto "+c.Name)
+			}
+		} else {
+			content += "\nprint -s " + utils.ShellQuote(c.Command)
+		}
+		content += "\n"
+	}
+	content += c.Command
+	if err := ts.writeFileFunc(cmdFdPath, []byte(content), 0600); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to hand command to shell: %v\n", err)
+		return int(exitCodeError)
+	}
+	if ts.options.executionIDFile != "" && c.ExecutionID != "" {
+		_ = ts.writeFileFunc(ts.options.executionIDFile, []byte(c.ExecutionID), 0600)
+	}
+	return int(exitCodeSuccess)
 }
 
 func buildRichHistoryEntry(name string, values map[string]string, workingDir, cwd string) string {
 	if len(values) == 0 && (workingDir == "" || workingDir == cwd) {
 		return ""
 	}
-	entry := "scripto " + name + " --"
-	for k, v := range values {
-		entry += " --" + k + "=" + shellQuoteValue(v)
+	keys := make([]string, 0, len(values))
+	for k := range values {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	entry := "scripto " + utils.ShellQuoteIfNeeded(name) + " --"
+	for _, k := range keys {
+		entry += " " + utils.ShellQuoteIfNeeded("--"+k+"="+values[k])
 	}
 	if workingDir != "" && workingDir != cwd {
-		entry += " --working-dir=" + shellQuoteValue(workingDir)
+		entry += " " + utils.ShellQuoteIfNeeded("--working-dir="+workingDir)
 	}
 	return entry
 }
 
-func shellQuoteValue(v string) string {
-	if strings.ContainsAny(v, " \t\n'\"\\$`!") {
-		return "'" + strings.ReplaceAll(v, "'", "'\\''") + "'"
-	}
-	return v
-}
-
-func shellescape(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
-
-func (ts *TerminalService) editScriptExternalCommand(scriptPath string) {
+func (ts *TerminalService) editScriptExternalCommand(scriptPath string) int {
 	cmdFdPath := ts.options.targetCommandFile
 	if cmdFdPath != "" {
 		_ = ts.writeFileFunc(cmdFdPath, []byte(scriptPath), 0600)
 	} else {
 		fmt.Print(scriptPath)
 	}
-	ts.exitFunc(int(exitCodeExternalEditor))
+	return int(exitCodeExternalEditor)
 }

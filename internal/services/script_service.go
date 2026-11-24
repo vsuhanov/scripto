@@ -2,10 +2,13 @@ package services
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/vsuhanov/scripto/entities"
 	"github.com/vsuhanov/scripto/internal/storage"
@@ -13,7 +16,20 @@ import (
 
 type ScriptService struct {
 	configPath string
+	mu         sync.Mutex
 	config     storage.Config
+}
+
+func (s *ScriptService) current() storage.Config {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.config
+}
+
+func (s *ScriptService) setConfig(config storage.Config) {
+	s.mu.Lock()
+	s.config = config
+	s.mu.Unlock()
 }
 
 func NewScriptService() (*ScriptService, error) {
@@ -33,163 +49,188 @@ func NewScriptService() (*ScriptService, error) {
 	}, nil
 }
 
-func (s *ScriptService) SaveScript(script *entities.Script, command string, originalScript *entities.Script) error {
-	config, err := storage.ReadConfig(s.configPath)
+func (s *ScriptService) update(mutate func(storage.Config) error) error {
+	config, err := storage.UpdateConfig(s.configPath, mutate)
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
+		return err
 	}
+	s.setConfig(config)
+	return nil
+}
 
-	if originalScript != nil {
-		if err := s.removeScriptFromConfig(config, originalScript); err != nil {
-			return fmt.Errorf("failed to remove old script: %w", err)
+func sameScript(a, b *entities.Script) bool {
+	if a.ID != "" && b.ID != "" {
+		return a.ID == b.ID
+	}
+	return a.Name == b.Name && a.FilePath == b.FilePath
+}
+
+func locateScript(config storage.Config, script *entities.Script) (string, int, bool) {
+	var scopes []string
+	if script.OriginalScope != "" {
+		scopes = append(scopes, script.OriginalScope)
+	}
+	scopes = append(scopes, script.Scope)
+	for _, scope := range scopes {
+		for i, candidate := range config[scope] {
+			if sameScript(candidate, script) {
+				return scope, i, true
+			}
 		}
 	}
+	if script.ID != "" {
+		for scope, scripts := range config {
+			for i, candidate := range scripts {
+				if candidate.ID == script.ID {
+					return scope, i, true
+				}
+			}
+		}
+	}
+	return "", -1, false
+}
 
+func removeAt(config storage.Config, scope string, index int) {
+	scripts := config[scope]
+	config[scope] = append(scripts[:index], scripts[index+1:]...)
+	if len(config[scope]) == 0 {
+		delete(config, scope)
+	}
+}
+
+func hasShortcut(script *entities.Script) bool {
+	return script != nil && script.Scope == "global" && script.Name != "" && !script.Archived
+}
+
+func updateShortcuts(before, after *entities.Script) {
+	if hasShortcut(before) && (!hasShortcut(after) || storage.ShortcutName(before.Name) != storage.ShortcutName(after.Name)) {
+		if err := storage.RemoveShortcutFunction(before.Name); err != nil {
+			log.Printf("Warning: failed to remove shortcut for '%s': %v", before.Name, err)
+		}
+	}
+	if hasShortcut(after) {
+		if err := storage.CreateShortcutFunction(after.Name); err != nil {
+			log.Printf("Warning: failed to create shortcut for '%s': %v", after.Name, err)
+		}
+	}
+}
+
+func (s *ScriptService) SaveScript(script *entities.Script, command string, originalScript *entities.Script) error {
 	if script.Scope == "" {
 		return fmt.Errorf("scope cannot be empty")
 	}
+	script.OriginalScope = ""
 
-	if err := s.checkForDuplicateName(config, script); err != nil {
-		return err
-	}
-
-	var filePath string
+	filePath := script.FilePath
 	if originalScript != nil && originalScript.FilePath != "" {
 		filePath = originalScript.FilePath
-	} else if script.FilePath != "" {
-		filePath = script.FilePath
-	} else {
+	}
+	newFile := false
+	if filePath == "" {
 		var err error
-		filePath, err = storage.SaveScriptToFile(script.Name, command)
+		filePath, err = storage.NewScriptFilePath(script.Name, command)
 		if err != nil {
 			return fmt.Errorf("failed to save script to file: %w", err)
 		}
+		newFile = true
 	}
-
 	script.FilePath = filePath
 
-	if config[script.Scope] == nil {
-		config[script.Scope] = []*entities.Script{}
-	}
-	config[script.Scope] = append(config[script.Scope], script)
-
-	if err := storage.WriteConfig(s.configPath, config); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
-	if err := os.WriteFile(script.FilePath, []byte(command), 0644); err != nil {
-		return fmt.Errorf("failed to update script file: %w", err)
-	}
-
-	if script.Scope == "global" && script.Name != "" {
-		if originalScript != nil && originalScript.Name != "" && originalScript.Name != script.Name {
-			if err := storage.RemoveShortcutFunction(originalScript.Name); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to remove old shortcut for '%s': %v\n", originalScript.Name, err)
+	var before *entities.Script
+	err := s.update(func(config storage.Config) error {
+		if originalScript != nil {
+			scope, index, ok := locateScript(config, originalScript)
+			if !ok {
+				return fmt.Errorf("failed to remove old script: script not found in config")
 			}
+			existing := *config[scope][index]
+			existing.Scope = scope
+			before = &existing
+			script.Archived = existing.Archived
+			removeAt(config, scope, index)
 		}
-		
-		if err := storage.CreateShortcutFunction(script.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to create shortcut for '%s': %v\n", script.Name, err)
+
+		if err := checkForDuplicateName(config, script); err != nil {
+			return err
 		}
+
+		if err := storage.WriteScriptFile(filePath, command); err != nil {
+			return fmt.Errorf("failed to write script file: %w", err)
+		}
+
+		config[script.Scope] = append(config[script.Scope], script)
+		return nil
+	})
+	if err != nil {
+		if newFile {
+			os.Remove(filePath)
+		}
+		return err
 	}
 
+	updateShortcuts(before, script)
 	return nil
 }
 
 func (s *ScriptService) DeleteScript(script *entities.Script) error {
-	config, err := storage.ReadConfig(s.configPath)
+	var removed *entities.Script
+	err := s.update(func(config storage.Config) error {
+		scope, index, ok := locateScript(config, script)
+		if !ok {
+			return fmt.Errorf("failed to remove script from config: script not found in config")
+		}
+		existing := *config[scope][index]
+		existing.Scope = scope
+		removed = &existing
+		removeAt(config, scope, index)
+		return nil
+	})
 	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
+		return err
 	}
 
-	if err := s.removeScriptFromConfig(config, script); err != nil {
-		return fmt.Errorf("failed to remove script from config: %w", err)
-	}
-
-	if err := storage.WriteConfig(s.configPath, config); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
-	if script.FilePath != "" {
-		if err := os.Remove(script.FilePath); err != nil && !os.IsNotExist(err) {
+	if removed.FilePath != "" {
+		if err := os.Remove(removed.FilePath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove script file: %w", err)
 		}
 	}
 
-	if script.Scope == "global" && script.Name != "" {
-		if err := storage.RemoveShortcutFunction(script.Name); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove shortcut for '%s': %v\n", script.Name, err)
-		}
-	}
+	updateShortcuts(removed, nil)
+	return nil
+}
 
+func (s *ScriptService) setArchived(script *entities.Script, archived bool) error {
+	var before, after entities.Script
+	err := s.update(func(config storage.Config) error {
+		scope, index, ok := locateScript(config, script)
+		if !ok {
+			return fmt.Errorf("script not found in config")
+		}
+		entry := config[scope][index]
+		before = *entry
+		before.Scope = scope
+		entry.Archived = archived
+		after = *entry
+		after.Scope = scope
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	updateShortcuts(&before, &after)
 	return nil
 }
 
 func (s *ScriptService) ArchiveScript(script *entities.Script) error {
-	config, err := storage.ReadConfig(s.configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
-	}
-
-	scripts, exists := config[script.Scope]
-	if !exists {
-		return fmt.Errorf("script scope not found in config")
-	}
-
-	found := false
-	for _, configScript := range scripts {
-		if s.scriptsMatch(configScript, script) {
-			configScript.Archived = true
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("script not found in config")
-	}
-
-	if err := storage.WriteConfig(s.configPath, config); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
-	s.config = config
-	return nil
+	return s.setArchived(script, true)
 }
 
 func (s *ScriptService) UnarchiveScript(script *entities.Script) error {
-	config, err := storage.ReadConfig(s.configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read config: %w", err)
-	}
-
-	scripts, exists := config[script.Scope]
-	if !exists {
-		return fmt.Errorf("script scope not found in config")
-	}
-
-	found := false
-	for _, configScript := range scripts {
-		if s.scriptsMatch(configScript, script) {
-			configScript.Archived = false
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("script not found in config")
-	}
-
-	if err := storage.WriteConfig(s.configPath, config); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
-	s.config = config
-	return nil
+	return s.setArchived(script, false)
 }
 
 func (s *ScriptService) FindAllScopesScriptsWithArchived() ([]*entities.Script, error) {
+	config := s.current()
 	var mainScripts []*entities.Script
 
 	cwd, err := os.Getwd()
@@ -199,7 +240,7 @@ func (s *ScriptService) FindAllScopesScriptsWithArchived() ([]*entities.Script, 
 
 	seen := make(map[string]bool)
 
-	if scripts, exists := s.config[cwd]; exists {
+	if scripts, exists := config[cwd]; exists {
 		for _, scriptEnt := range scripts {
 			scriptEnt.Scope = cwd
 			mainScripts = append(mainScripts, scriptEnt)
@@ -208,14 +249,14 @@ func (s *ScriptService) FindAllScopesScriptsWithArchived() ([]*entities.Script, 
 	}
 
 	var patternScopes []string
-	for scope := range s.config {
+	for scope := range config {
 		if !seen[scope] && IsPatternScope(scope) && ScopeMatchesDir(scope, cwd) {
 			patternScopes = append(patternScopes, scope)
 		}
 	}
 	sort.Strings(patternScopes)
 	for _, scope := range patternScopes {
-		for _, scriptEnt := range s.config[scope] {
+		for _, scriptEnt := range config[scope] {
 			scriptEnt.Scope = scope
 			mainScripts = append(mainScripts, scriptEnt)
 		}
@@ -229,7 +270,7 @@ func (s *ScriptService) FindAllScopesScriptsWithArchived() ([]*entities.Script, 
 			break
 		}
 		if !seen[parent] {
-			if scripts, exists := s.config[parent]; exists {
+			if scripts, exists := config[parent]; exists {
 				for _, scriptEnt := range scripts {
 					scriptEnt.Scope = parent
 					mainScripts = append(mainScripts, scriptEnt)
@@ -240,7 +281,7 @@ func (s *ScriptService) FindAllScopesScriptsWithArchived() ([]*entities.Script, 
 		dir = parent
 	}
 
-	if scripts, exists := s.config["global"]; exists {
+	if scripts, exists := config["global"]; exists {
 		for _, scriptEnt := range scripts {
 			scriptEnt.Scope = "global"
 			mainScripts = append(mainScripts, scriptEnt)
@@ -249,7 +290,7 @@ func (s *ScriptService) FindAllScopesScriptsWithArchived() ([]*entities.Script, 
 	}
 
 	var extra []*entities.Script
-	for scope, scripts := range s.config {
+	for scope, scripts := range config {
 		if seen[scope] {
 			continue
 		}
@@ -259,7 +300,7 @@ func (s *ScriptService) FindAllScopesScriptsWithArchived() ([]*entities.Script, 
 		}
 	}
 
-	sort.Slice(extra, func(i, j int) bool {
+	sort.SliceStable(extra, func(i, j int) bool {
 		return extra[i].Scope < extra[j].Scope
 	})
 
@@ -294,63 +335,47 @@ func (s *ScriptService) ValidateScript(script *entities.Script) error {
 	return nil
 }
 
-func (s *ScriptService) removeScriptFromConfig(config storage.Config, script *entities.Script) error {
-	lookupScope := script.Scope
-	if _, exists := config[lookupScope]; !exists && script.OriginalScope != "" {
-		lookupScope = script.OriginalScope
-	}
-	scripts, exists := config[lookupScope]
-	if !exists {
-		return fmt.Errorf("script scope not found in config")
-	}
-
-	scriptRemoved := false
-	for i, configScript := range scripts {
-		if s.scriptsMatchInScope(configScript, script, lookupScope) {
-			config[lookupScope] = append(scripts[:i], scripts[i+1:]...)
-			if len(config[lookupScope]) == 0 {
-				delete(config, lookupScope)
-			}
-			scriptRemoved = true
-			break
-		}
-	}
-
-	if !scriptRemoved {
-		return fmt.Errorf("script not found in config")
-	}
-
-	return nil
-}
-
-func (s *ScriptService) scriptsMatch(script1, script2 *entities.Script) bool {
-	return script1.Name == script2.Name &&
-		script1.FilePath == script2.FilePath &&
-		script1.Description == script2.Description &&
-		script1.Scope == script2.Scope
-}
-
-func (s *ScriptService) scriptsMatchInScope(configScript, script *entities.Script, scope string) bool {
-	return configScript.Name == script.Name &&
-		configScript.FilePath == script.FilePath &&
-		configScript.Description == script.Description &&
-		configScript.Scope == scope
-}
-
-func (s *ScriptService) checkForDuplicateName(config storage.Config, script *entities.Script) error {
+func checkForDuplicateName(config storage.Config, script *entities.Script) error {
 	if script.Name == "" {
-		return nil // Allow unnamed scripts
+		return nil
 	}
 
-	if scripts, exists := config[script.Scope]; exists {
-		for _, existingScript := range scripts {
-			if existingScript.Name == script.Name {
-				return fmt.Errorf("script with name '%s' already exists in scope '%s'", script.Name, script.Scope)
+	for _, existing := range config[script.Scope] {
+		if existing.Name == script.Name {
+			return fmt.Errorf("script with name '%s' already exists in scope '%s'", script.Name, script.Scope)
+		}
+	}
+
+	if script.Scope == "global" {
+		shortcut := storage.ShortcutName(script.Name)
+		for _, existing := range config["global"] {
+			if shortcut != "" && existing.Name != "" && storage.ShortcutName(existing.Name) == shortcut {
+				return fmt.Errorf("global shortcut '%s' is already used by script '%s'", shortcut, existing.Name)
 			}
 		}
 	}
 
 	return nil
+}
+
+type GlobalShortcutInfo struct {
+	Shortcut   string
+	Normalized bool
+	Shadows    string
+}
+
+func (s *ScriptService) GlobalShortcutInfo(name string) GlobalShortcutInfo {
+	shortcut := storage.ShortcutName(name)
+	info := GlobalShortcutInfo{
+		Shortcut:   shortcut,
+		Normalized: shortcut != strings.TrimSpace(name),
+	}
+	if shortcut != "" {
+		if path, err := exec.LookPath(shortcut); err == nil {
+			info.Shadows = path
+		}
+	}
+	return info
 }
 
 func (s *ScriptService) GetScopeDisplayName(scope string) string {
@@ -361,21 +386,6 @@ func (s *ScriptService) GetScopeDisplayName(scope string) string {
 		return scope
 	}
 	return filepath.Base(scope)
-}
-
-func (s *ScriptService) GetCurrentDirectoryScope() string {
-	if cwd, err := os.Getwd(); err == nil {
-		return cwd
-	}
-	return "global"
-}
-
-func (s *ScriptService) CreateTempScriptFile(command string) (string, error) {
-	filePath, err := storage.SaveScriptToFile("", command)
-	if err != nil {
-		return "", fmt.Errorf("failed to create temp script file: %w", err)
-	}
-	return filePath, nil
 }
 
 func (s *ScriptService) SyncShortcuts() error {
@@ -396,11 +406,12 @@ func (s *ScriptService) Reload() error {
 	if err != nil {
 		return fmt.Errorf("failed to reload config: %w", err)
 	}
-	s.config = config
+	s.setConfig(config)
 	return nil
 }
 
 func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
+	config := s.current()
 	var results []*entities.Script
 
 	cwd, err := os.Getwd()
@@ -408,7 +419,7 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 		return nil, err
 	}
 
-	if scripts, exists := s.config[cwd]; exists {
+	if scripts, exists := config[cwd]; exists {
 		for _, scriptEnt := range scripts {
 			if scriptEnt.Archived {
 				continue
@@ -419,14 +430,14 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 	}
 
 	var patternScopes []string
-	for scope := range s.config {
+	for scope := range config {
 		if scope != cwd && IsPatternScope(scope) && ScopeMatchesDir(scope, cwd) {
 			patternScopes = append(patternScopes, scope)
 		}
 	}
 	sort.Strings(patternScopes)
 	for _, scope := range patternScopes {
-		for _, scriptEnt := range s.config[scope] {
+		for _, scriptEnt := range config[scope] {
 			if scriptEnt.Archived {
 				continue
 			}
@@ -435,7 +446,7 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 		}
 	}
 
-	if scripts, exists := s.config["global"]; exists {
+	if scripts, exists := config["global"]; exists {
 		for _, scriptEnt := range scripts {
 			if scriptEnt.Archived {
 				continue
@@ -449,8 +460,9 @@ func (s *ScriptService) FindAllScripts() ([]*entities.Script, error) {
 }
 
 func (s *ScriptService) FindContextualScripts(contextualIDs map[string]bool, cwd string, alreadyInHierarchy map[string]bool) ([]*entities.Script, error) {
+	config := s.current()
 	var results []*entities.Script
-	for scope, scripts := range s.config {
+	for scope, scripts := range config {
 		if scope == "global" || alreadyInHierarchy[scope] || (IsPatternScope(scope) && ScopeMatchesDir(scope, cwd)) {
 			continue
 		}
@@ -472,14 +484,18 @@ func (s *ScriptService) FindAllScopesScripts() ([]*entities.Script, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.withOtherScopes(mainScripts), nil
+}
 
+func (s *ScriptService) withOtherScopes(mainScripts []*entities.Script) []*entities.Script {
+	config := s.current()
 	seen := make(map[string]bool)
 	for _, script := range mainScripts {
 		seen[script.Scope] = true
 	}
 
 	var extra []*entities.Script
-	for scope, scripts := range s.config {
+	for scope, scripts := range config {
 		if seen[scope] {
 			continue
 		}
@@ -492,11 +508,35 @@ func (s *ScriptService) FindAllScopesScripts() ([]*entities.Script, error) {
 		}
 	}
 
-	sort.Slice(extra, func(i, j int) bool {
+	sort.SliceStable(extra, func(i, j int) bool {
 		return extra[i].Scope < extra[j].Scope
 	})
 
-	return append(mainScripts, extra...), nil
+	result := make([]*entities.Script, 0, len(mainScripts)+len(extra))
+	result = append(result, mainScripts...)
+	return append(result, extra...)
+}
+
+type ScriptListings struct {
+	Current      []*entities.Script
+	AllScopes    []*entities.Script
+	WithArchived []*entities.Script
+}
+
+func (s *ScriptService) FindScriptListings() (ScriptListings, error) {
+	current, err := s.FindAllScripts()
+	if err != nil {
+		return ScriptListings{}, err
+	}
+	withArchived, err := s.FindAllScopesScriptsWithArchived()
+	if err != nil {
+		return ScriptListings{}, err
+	}
+	return ScriptListings{
+		Current:      current,
+		AllScopes:    s.withOtherScopes(current),
+		WithArchived: withArchived,
+	}, nil
 }
 
 func (s *ScriptService) MatchAllScopes(input string) ([]*entities.Script, error) {
@@ -526,86 +566,4 @@ func (s *ScriptService) Match(input string) (*entities.Script, error) {
 	}
 
 	return nil, nil
-}
-
-func (s *ScriptService) FilterByKeyword(keyword string) ([]*entities.Script, error) {
-	allScripts, err := s.FindAllScripts()
-	if err != nil {
-		return nil, err
-	}
-
-	var filtered []*entities.Script
-	keyword = strings.ToLower(keyword)
-
-	for _, script := range allScripts {
-		searchText := strings.ToLower(script.Name + " " + script.Description)
-		if strings.Contains(searchText, keyword) {
-			filtered = append(filtered, script)
-		}
-	}
-
-	return filtered, nil
-}
-
-func (s *ScriptService) FindScriptByFilePath(filePath string) (*entities.Script, error) {
-	for scope, scripts := range s.config {
-		for _, scriptEnt := range scripts {
-			if scriptEnt.FilePath == filePath {
-				scriptEnt.Scope = scope
-				return scriptEnt, nil
-			}
-		}
-	}
-	return nil, fmt.Errorf("script not found with file path: %s", filePath)
-}
-
-func (s *ScriptService) getScopePriority(scope string) int {
-	if scope == "global" {
-		return 2
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return 3 // Unknown priority if we can't get cwd
-	}
-
-	if scope == cwd {
-		return 0 // Local (current directory)
-	}
-
-	if IsPatternScope(scope) {
-		if ScopeMatchesDir(scope, cwd) {
-			return 0
-		}
-		return 3
-	}
-
-	if strings.HasPrefix(cwd, scope+string(filepath.Separator)) {
-		return 1 // Parent directory
-	}
-
-	return 3 // Other directory
-}
-
-func (s *ScriptService) calculateKeywordConfidence(keyword string, scriptEnt *entities.Script) float64 {
-	confidence := 0.0
-
-	if strings.ToLower(scriptEnt.Name) == keyword {
-		confidence = 1.0
-	} else if strings.Contains(strings.ToLower(scriptEnt.Name), keyword) {
-		confidence = 0.8
-	}
-
-	if strings.Contains(strings.ToLower(scriptEnt.Description), keyword) {
-		confidence = max(confidence, 0.4)
-	}
-
-	return confidence
-}
-
-func max(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
 }

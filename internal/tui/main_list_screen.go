@@ -82,6 +82,9 @@ type MainListScreen struct {
 	searchMode    bool
 	searchInput   textinput.Model
 	initialSearch string
+
+	searchQueryCache  string
+	searchRegexpCache *regexp.Regexp
 }
 
 func NewMainListScreen(container *services.Container) (*MainListScreen, error) {
@@ -127,7 +130,7 @@ func (m *MainListScreen) buildListItems() []listItem {
 	filtered := scripts
 	if m.searchMode {
 		if query := m.searchInput.Value(); query != "" {
-			if re, err := regexp.Compile("(?i)" + query); err == nil {
+			if re := m.searchRegexp(query); re != nil {
 				var matched []*entities.Script
 				for _, s := range scripts {
 					if re.MatchString(s.Name) {
@@ -148,6 +151,14 @@ func (m *MainListScreen) buildListItems() []listItem {
 		items = append(items, listItem{script: s})
 	}
 	return items
+}
+
+func (m *MainListScreen) searchRegexp(query string) *regexp.Regexp {
+	if query != m.searchQueryCache {
+		m.searchQueryCache = query
+		m.searchRegexpCache, _ = regexp.Compile("(?i)" + query)
+	}
+	return m.searchRegexpCache
 }
 
 func (m *MainListScreen) SetStatusMessage(msg string) {
@@ -196,7 +207,11 @@ type scriptsWithStatsMsg struct {
 
 func (m *MainListScreen) loadScripts() tea.Cmd {
 	return func() tea.Msg {
-		scripts, err := m.container.ScriptService.FindAllScripts()
+		if err := m.container.ScriptService.Reload(); err != nil {
+			return ErrorMsg(err)
+		}
+
+		listings, err := m.container.ScriptService.FindScriptListings()
 		if err != nil {
 			return ErrorMsg(fmt.Errorf("failed to find scripts: %w", err))
 		}
@@ -212,7 +227,7 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 				for _, id := range ids {
 					contextualIDMap[id] = true
 				}
-				for _, s := range scripts {
+				for _, s := range listings.Current {
 					delete(contextualIDMap, s.ID)
 				}
 				if len(contextualIDMap) > 0 {
@@ -221,33 +236,21 @@ func (m *MainListScreen) loadScripts() tea.Cmd {
 			}
 		}
 
-		allScripts, err := m.container.ScriptService.FindAllScopesScripts()
-		if err != nil {
-			allScripts = scripts
-		}
-
-		archivedScripts, err := m.container.ScriptService.FindAllScopesScriptsWithArchived()
-		if err != nil {
-			archivedScripts = allScripts
-		}
-
-		var stats map[string]services.ScriptStats
-		var frecencyScores map[string]float64
+		stats := map[string]services.ScriptStats{}
 		if m.container.ExecutionHistoryService != nil {
-			stats, _ = m.container.ExecutionHistoryService.GetAllScriptStats()
-			frecencyScores = m.container.ExecutionHistoryService.GetFrecencyScores()
+			if loaded, err := m.container.ExecutionHistoryService.GetAllScriptStats(); err == nil {
+				stats = loaded
+			}
 		}
-		if stats == nil {
-			stats = map[string]services.ScriptStats{}
-		}
-		if frecencyScores == nil {
-			frecencyScores = map[string]float64{}
+		frecencyScores := make(map[string]float64, len(stats))
+		for id, stat := range stats {
+			frecencyScores[id] = stat.Frecency
 		}
 
 		return scriptsWithStatsMsg{
-			scripts:         append(scripts, contextualScripts...),
-			allScripts:      append(allScripts, contextualScripts...),
-			archivedScripts: archivedScripts,
+			scripts:         append(listings.Current, contextualScripts...),
+			allScripts:      append(listings.AllScopes, contextualScripts...),
+			archivedScripts: listings.WithArchived,
 			stats:           stats,
 			frecencyScores:  frecencyScores,
 		}

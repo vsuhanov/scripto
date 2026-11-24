@@ -6,7 +6,6 @@ import (
 	_ "embed"
 	"fmt"
 	"sort"
-	"strings"
 )
 
 //go:embed migrations/001_initial.sql
@@ -15,12 +14,16 @@ var migration001 string
 //go:embed migrations/002_shell_history.sql
 var migration002 string
 
+//go:embed migrations/003_execution_results.sql
+var migration003 string
+
 var migrations = []struct {
 	name string
 	sql  string
 }{
 	{"001_initial", migration001},
 	{"002_shell_history", migration002},
+	{"003_execution_results", migration003},
 }
 
 const migrationLockAttempts = 5
@@ -129,14 +132,8 @@ func applyMigrationsLocked(db *sql.DB) error {
 		if applied[m.name] {
 			continue
 		}
-		for _, stmt := range strings.Split(m.sql, ";") {
-			stmt = strings.TrimSpace(stmt)
-			if stmt == "" {
-				continue
-			}
-			if _, err := conn.ExecContext(ctx, stmt); err != nil {
-				return fmt.Errorf("failed to apply migration %s: %w", m.name, err)
-			}
+		if _, err := conn.ExecContext(ctx, m.sql); err != nil {
+			return fmt.Errorf("failed to apply migration %s: %w", m.name, err)
 		}
 		if _, err := conn.ExecContext(ctx,
 			"INSERT OR IGNORE INTO schema_migrations (name, applied_at) VALUES (?, strftime('%s', 'now'))", m.name); err != nil {

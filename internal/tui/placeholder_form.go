@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/vsuhanov/scripto/entities"
-	"github.com/vsuhanov/scripto/internal/args"
 	"github.com/vsuhanov/scripto/internal/services"
 	"github.com/vsuhanov/scripto/internal/templatex"
 
@@ -141,6 +140,7 @@ type PlaceholderFormModel struct {
 	values         map[string]string
 	buttonFocus    int
 	script         *entities.Script
+	action         string
 	rawCommand     string
 	viewport       viewport.Model
 	width          int
@@ -173,8 +173,14 @@ type placeholderHistoryLoadedMsg struct {
 
 const leftPaneWidth = 54
 
-func NewPlaceholderForm(script *entities.Script, placeholders []templatex.VariableMeta,
+func NewPlaceholderForm(script *entities.Script, action string, placeholders []templatex.VariableMeta,
 	width, height int, container *services.Container, originalScript string, workingDir string, rawCommand string) PlaceholderFormModel {
+	if script != nil && originalScript == "" && script.FilePath != "" {
+		if content, err := os.ReadFile(script.FilePath); err == nil {
+			originalScript = string(content)
+		}
+	}
+
 	fields := make([]fieldControl, len(placeholders))
 
 	for i, placeholder := range placeholders {
@@ -250,6 +256,7 @@ func NewPlaceholderForm(script *entities.Script, placeholders []templatex.Variab
 		values:            make(map[string]string),
 		buttonFocus:       0,
 		script:            script,
+		action:            action,
 		rawCommand:        rawCommand,
 		viewport:          viewport.New(vpWidth, vpHeight),
 		width:             width,
@@ -275,7 +282,22 @@ func (m PlaceholderFormModel) buildPreviewContent(values map[string]string) stri
 	if m.script == nil {
 		return m.rawCommand
 	}
-	return args.NewArgumentProcessor(m.script).BuildPreviewCommand(values)
+	if m.container == nil {
+		return strings.TrimSpace(m.originalScript)
+	}
+	return m.container.ExecutionService.RenderPreview(m.originalScript, values)
+}
+
+func (m PlaceholderFormModel) doneMsg(values map[string]string, workingDir, commandOverride string) PlaceholderFormDoneMsg {
+	return PlaceholderFormDoneMsg{
+		script:          m.script,
+		action:          m.action,
+		originalScript:  m.originalScript,
+		rawCommand:      m.rawCommand,
+		values:          values,
+		workingDir:      workingDir,
+		commandOverride: commandOverride,
+	}
 }
 
 func (m PlaceholderFormModel) currentValues() map[string]string {
@@ -625,7 +647,7 @@ func (m PlaceholderFormModel) handleHistoryKey(msg tea.KeyMsg) (PlaceholderFormM
 		}
 		workingDir := m.workingDirInput.Value()
 		return m, func() tea.Msg {
-			return PlaceholderFormDoneMsg{values: values, workingDir: workingDir, commandOverride: m.commandOverride}
+			return m.doneMsg(values, workingDir, m.commandOverride)
 		}
 
 	case "tab":
@@ -834,7 +856,7 @@ func (m PlaceholderFormModel) handleFormKey(msg tea.KeyMsg) (PlaceholderFormMode
 			workingDir := m.resolvedWorkingDir()
 			override := m.commandOverride
 			return m, func() tea.Msg {
-				return PlaceholderFormDoneMsg{values: values, workingDir: workingDir, commandOverride: override}
+				return m.doneMsg(values, workingDir, override)
 			}
 		} else if m.buttonFocus == 2 {
 			m.cancelled = true

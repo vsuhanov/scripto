@@ -106,6 +106,20 @@ var (
 			Foreground(errorColor).
 			Bold(true)
 
+	InfoBannerStyle = lipgloss.NewStyle().
+			Foreground(primaryColor).
+			BorderStyle(lipgloss.NormalBorder()).
+			BorderLeft(true).
+			BorderForeground(primaryColor).
+			PaddingLeft(1)
+
+	WarningBannerStyle = lipgloss.NewStyle().
+				Foreground(warningColor).
+				BorderStyle(lipgloss.NormalBorder()).
+				BorderLeft(true).
+				BorderForeground(warningColor).
+				PaddingLeft(1)
+
 	// Popup styles
 	PopupStyle = lipgloss.NewStyle().
 			Background(bgColor).
@@ -199,13 +213,13 @@ var (
 	// Input styles for placeholders
 	PlaceholderInputStyle = lipgloss.NewStyle().
 				MarginBottom(1)
-				// BorderStyle(lipgloss.RoundedBorder()).
-				// BorderForeground(colors.InputBorder)
+		// BorderStyle(lipgloss.RoundedBorder()).
+		// BorderForeground(colors.InputBorder)
 
 	PlaceholderInputFocusedStyle = lipgloss.NewStyle().
 					MarginBottom(1)
-					// BorderStyle(lipgloss.RoundedBorder()).
-					// BorderForeground(colors.InputBorderFocused)
+		// BorderStyle(lipgloss.RoundedBorder()).
+		// BorderForeground(colors.InputBorderFocused)
 
 	// Instruction style
 	InstructionStyle = lipgloss.NewStyle().

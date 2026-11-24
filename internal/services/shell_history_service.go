@@ -104,6 +104,37 @@ func (s *ShellHistoryService) RecordFinish(id string, exitCode int, finishedAt i
 	return nil
 }
 
+func (s *ShellHistoryService) RecordComplete(id, command, workingDir, sessionID, source string, startedAt, finishedAt int64, exitCode int) error {
+	if source == "" {
+		source = ShellHistorySourceShell
+	}
+	_, err := s.db.Exec(
+		`INSERT INTO shell_history (id, command, working_directory, started_at, finished_at, exit_code, session_id, source)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET
+		     command = excluded.command,
+		     working_directory = excluded.working_directory,
+		     started_at = excluded.started_at,
+		     finished_at = excluded.finished_at,
+		     exit_code = excluded.exit_code,
+		     session_id = excluded.session_id,
+		     source = excluded.source`,
+		id, command, workingDir, startedAt, finishedAt, exitCode, sessionID, source,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to record command: %w", err)
+	}
+	return nil
+}
+
+func (s *ShellHistoryService) MarkFinished(id string, exitCode int, finishedAt int64) error {
+	_, err := s.db.Exec("UPDATE shell_history SET finished_at = ?, exit_code = ? WHERE id = ?", finishedAt, exitCode, id)
+	if err != nil {
+		return fmt.Errorf("failed to mark shell history entry as finished: %w", err)
+	}
+	return nil
+}
+
 func (s *ShellHistoryService) GetHistory(query ShellHistoryQuery) ([]ShellHistoryRecord, error) {
 	var conditions []string
 	var args []interface{}
@@ -189,7 +220,12 @@ func (s *ShellHistoryService) Prune(olderThanDays int) error {
 		return nil
 	}
 	cutoff := time.Now().AddDate(0, 0, -olderThanDays).Unix()
-	res, err := s.db.Exec("DELETE FROM shell_history WHERE started_at > 0 AND started_at < ? AND saved_script_id = ''", cutoff)
+	res, err := s.db.Exec(
+		`DELETE FROM shell_history
+		 WHERE saved_script_id = ''
+		   AND ((started_at > 0 AND started_at < ?) OR (started_at = 0 AND finished_at < ?))`,
+		cutoff, cutoff,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to prune shell history: %w", err)
 	}

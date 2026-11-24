@@ -32,6 +32,9 @@ type ScriptEditorScreen struct {
 	container *services.Container
 
 	errorMessage string
+
+	shortcutInfoName string
+	shortcutInfo     services.GlobalShortcutInfo
 }
 
 const (
@@ -364,6 +367,8 @@ func (e *ScriptEditorScreen) View() string {
 	}
 	sections = append(sections, checkboxStyle.Render(checkboxLabel))
 
+	sections = append(sections, e.renderShortcutBanners(popupWidth)...)
+
 	if !e.globalCheckbox {
 		scopeLabel := FieldLabelStyle.Render("Scope (directory path or glob pattern):")
 		if e.focusedField == EditorScreenFieldScope {
@@ -388,6 +393,36 @@ func (e *ScriptEditorScreen) View() string {
 		Render(content)
 }
 
+func (e *ScriptEditorScreen) globalShortcutInfo(name string) services.GlobalShortcutInfo {
+	if name != e.shortcutInfoName {
+		e.shortcutInfoName = name
+		e.shortcutInfo = e.container.ScriptService.GlobalShortcutInfo(name)
+	}
+	return e.shortcutInfo
+}
+
+func (e *ScriptEditorScreen) renderShortcutBanners(width int) []string {
+	name := strings.TrimSpace(e.nameInput.Value())
+	if !e.globalCheckbox || name == "" || e.container == nil {
+		return nil
+	}
+
+	bannerWidth := max(20, width-4)
+	info := e.globalShortcutInfo(name)
+	var banners []string
+	if info.Shortcut == "" {
+		banners = append(banners, WarningBannerStyle.Width(bannerWidth).Render("No global shortcut will be created: the name has no characters usable in a shell function name"))
+		return banners
+	}
+	if info.Normalized {
+		banners = append(banners, InfoBannerStyle.Width(bannerWidth).Render("Global shortcut will be normalised to `"+info.Shortcut+"`"))
+	}
+	if info.Shadows != "" {
+		banners = append(banners, WarningBannerStyle.Width(bannerWidth).Render("Shortcut `"+info.Shortcut+"` will shadow "+info.Shadows))
+	}
+	return banners
+}
+
 func (e *ScriptEditorScreen) renderButtons(width int) string {
 	saveStyle := PrimaryButtonStyle
 	cancelStyle := DangerButtonStyle
@@ -405,4 +440,3 @@ func (e *ScriptEditorScreen) renderButtons(width int) string {
 	buttons := lipgloss.JoinHorizontal(lipgloss.Top, save, "  ", cancel)
 	return ButtonContainerStyle.Width(width).Render(buttons)
 }
-

@@ -6,10 +6,10 @@ import (
 )
 
 type Container struct {
-	ScriptService          *ScriptService
-	ExecutionService       *ExecutionService
-	TerminalService        *TerminalService
-	HistoryService         *HistoryService
+	ScriptService           *ScriptService
+	ExecutionService        *ExecutionService
+	TerminalService         *TerminalService
+	HistoryService          *HistoryService
 	ExecutionHistoryService *ExecutionHistoryService
 	ShellHistoryService     *ShellHistoryService
 }
@@ -32,7 +32,7 @@ func NewContainer() (*Container, error) {
 
 	var shellHistoryService *ShellHistoryService
 	if executionHistoryService != nil {
-		shellHistoryService = NewShellHistoryServiceWithDB(executionHistoryService.db)
+		shellHistoryService = NewShellHistoryServiceWithDB(executionHistoryService.DB())
 	} else if svc, err := NewShellHistoryService(); err != nil {
 		log.Printf("Warning: failed to initialize shell history service: %v", err)
 	} else {
@@ -44,9 +44,18 @@ func NewContainer() (*Container, error) {
 		ExecutionService: NewExecutionService(),
 		TerminalService: NewTerminalService(TerminalServiceOptions{
 			targetCommandFile: os.Getenv("SCRIPTO_CMD_FD"),
+			executionIDFile:   os.Getenv("SCRIPTO_EXEC_ID_FILE"),
 		}),
 		HistoryService:          NewHistoryService(),
 		ExecutionHistoryService: executionHistoryService,
 		ShellHistoryService:     shellHistoryService,
 	}, nil
+}
+
+func (c *Container) Close() {
+	if c.ExecutionHistoryService != nil {
+		c.ExecutionHistoryService.Close()
+	} else if c.ShellHistoryService != nil {
+		c.ShellHistoryService.Close()
+	}
 }

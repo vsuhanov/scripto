@@ -4,6 +4,7 @@ import (
 	"bufio"
 	_ "embed"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -42,11 +43,12 @@ var commit = "unknown"
 
 func configureLogger() {
 	logFilePath := "/tmp/scripto.log"
-	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating log file: %v\n", err)
-		os.Exit(1)
+		log.SetOutput(io.Discard)
+		return
 	}
+	_ = os.Chmod(logFilePath, 0600)
 	log.SetOutput(logFile)
 }
 
@@ -76,62 +78,81 @@ func main() {
 		os.Exit(handleRecordHistory(os.Args[2:]))
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "__record-execution" {
+		os.Exit(handleRecordExecution(os.Args[2:]))
+	}
+
 	container, err := services.NewContainer()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	handleCommand(container, os.Args[1:])
+	code := handleCommand(container, os.Args[1:])
+	container.Close()
+	os.Exit(code)
 }
 
-func handleCommand(container *services.Container, args []string) {
+func runTui(container *services.Container, request tui.TuiRequest) int {
+	code, err := tui.RunApp(container, request)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+	return code
+}
+
+func handleCommand(container *services.Container, args []string) int {
 	if len(args) > 0 && args[0] == "completion" {
 		fmt.Print(completionZsh)
-		return
+		return 0
 	}
 
 	if len(args) > 0 && args[0] == "__complete" {
 		handleCompletion(container, args[1:])
-		container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(3))
+		return 3
 	}
 
 	if len(args) > 0 && args[0] == "install" {
 		if err := handleInstall(args[1:]); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
 		}
-		return
+		return 0
 	}
 
 	if len(args) > 0 && args[0] == "cli" {
-		os.Exit(handleCli(container, args[1:]))
+		return handleCli(container, args[1:])
 	}
 
 	if len(args) == 0 {
-		if err := tui.RunApp(container, tui.ShowMainListRequest{}); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
-			container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
-		}
-		return
+		return runTui(container, tui.ShowMainListRequest{})
 	}
 
 	if args[0] == "add" {
-		if err := tui.RunApp(container, tui.ShowAddScreenRequest{}); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
-			container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
-		}
-		return
+		return runTui(container, tui.ShowAddScreenRequest{})
 	}
 
-	if err := executeScript(container, args); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err.Error())
-		container.TerminalService.ExecuteCommand(container.TerminalService.PrepareExit(1))
-		return
-	}
+	return executeScript(container, args)
 }
 
 func runMigrate() error {
+	configPath, err := storage.GetConfigPath()
+	if err != nil {
+		return fmt.Errorf("failed to get config path: %w", err)
+	}
+	config, err := storage.UpdateConfig(configPath, func(storage.Config) error { return nil })
+	if err != nil {
+		return fmt.Errorf("failed to migrate config: %w", err)
+	}
+	if err := storage.SyncShortcuts(config); err != nil {
+		return fmt.Errorf("failed to sync shortcuts: %w", err)
+	}
+	fmt.Println("Migration complete")
+	return nil
+}
+
+func syncShortcuts() error {
 	configPath, err := storage.GetConfigPath()
 	if err != nil {
 		return fmt.Errorf("failed to get config path: %w", err)
@@ -140,11 +161,7 @@ func runMigrate() error {
 	if err != nil {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
-	if err := storage.WriteConfig(configPath, config); err != nil {
-		return fmt.Errorf("failed to write config: %w", err)
-	}
-	fmt.Println("Migration complete")
-	return nil
+	return storage.SyncShortcuts(config)
 }
 
 func terminalWidth() int {
@@ -260,6 +277,11 @@ func installShellIntegration() error {
 		return fmt.Errorf("failed to update .zshrc: %w", err)
 	}
 	printInstallStep("Updated", zshrcPath)
+
+	if err := syncShortcuts(); err != nil {
+		return fmt.Errorf("failed to sync global shortcuts: %w", err)
+	}
+	printInstallStep("Synced global shortcuts", fmt.Sprintf("separator '%s'", storage.ShortcutSeparator()))
 
 	return nil
 }
@@ -382,27 +404,28 @@ func isValidAliasName(name string) bool {
 	return true
 }
 
-func executeScript(container *services.Container, userArgs []string) error {
+func executeScript(container *services.Container, userArgs []string) int {
 	scriptName, scriptArgs := parseScriptNameAndArgs(userArgs)
 
 	matchResult, err := container.ScriptService.Match(scriptName)
 	if err != nil {
-		return fmt.Errorf("failed to match script: %w", err)
+		fmt.Fprintf(os.Stderr, "Error: failed to match script: %v\n", err)
+		return 1
 	}
 
 	if matchResult != nil {
-		return executeFoundScript(container, matchResult, scriptArgs)
+		return runTui(container, tui.ExecuteScriptRequest{Script: matchResult, ScriptArgs: scriptArgs})
 	}
 
 	allScopeMatches, err := container.ScriptService.MatchAllScopes(scriptName)
 	if err != nil {
-		return fmt.Errorf("failed to match script across scopes: %w", err)
+		fmt.Fprintf(os.Stderr, "Error: failed to match script across scopes: %v\n", err)
+		return 1
 	}
 
 	if len(allScopeMatches) == 0 {
-		scriptObj := container.ScriptService.CreateEmptyScript()
-		return tui.RunApp(container, tui.ShowScriptEditorRequest{
-			Script:         scriptObj,
+		return runTui(container, tui.ShowScriptEditorRequest{
+			Script:         container.ScriptService.CreateEmptyScript(),
 			InitialCommand: strings.Join(userArgs, " "),
 		})
 	}
@@ -410,10 +433,10 @@ func executeScript(container *services.Container, userArgs []string) error {
 	if len(allScopeMatches) == 1 {
 		script := allScopeMatches[0]
 		markContextualIfApplicable(container, script)
-		return executeFoundScript(container, script, scriptArgs)
+		return runTui(container, tui.ExecuteScriptRequest{Script: script, ScriptArgs: scriptArgs})
 	}
 
-	return tui.RunApp(container, tui.ShowMainListWithSearchRequest{SearchText: scriptName})
+	return runTui(container, tui.ShowMainListWithSearchRequest{SearchText: scriptName})
 }
 
 func parseScriptNameAndArgs(userArgs []string) (string, []string) {
@@ -443,10 +466,6 @@ func parseScriptNameAndArgs(userArgs []string) (string, []string) {
 	scriptName := strings.Join(scriptNameParts, " ")
 
 	return scriptName, scriptArgs
-}
-
-func executeFoundScript(container *services.Container, scriptEnt *entities.Script, scriptArgs []string) error {
-	return tui.RunApp(container, tui.ExecuteScriptRequest{Script: scriptEnt, ScriptArgs: scriptArgs})
 }
 
 func markContextualIfApplicable(container *services.Container, script *entities.Script) {
@@ -540,7 +559,7 @@ func getCompletionSuggestions(container *services.Container, showAll bool) []str
 	}
 
 	for scope := range scopeScripts {
-		sort.Slice(scopeScripts[scope], func(i, j int) bool {
+		sort.SliceStable(scopeScripts[scope], func(i, j int) bool {
 			return frecencyScores[scopeScripts[scope][i].ID] > frecencyScores[scopeScripts[scope][j].ID]
 		})
 	}
@@ -606,7 +625,7 @@ func buildArgsString(values map[string]string, keyOrder []string) string {
 	used := map[string]bool{}
 	for _, key := range keyOrder {
 		if val, ok := values[key]; ok && val != "" {
-			parts = append(parts, fmt.Sprintf("--%s=%s", key, shellQuoteValue(val)))
+			parts = append(parts, utils.ShellQuoteIfNeeded(fmt.Sprintf("--%s=%s", key, val)))
 			used[key] = true
 		}
 	}
@@ -618,37 +637,19 @@ func buildArgsString(values map[string]string, keyOrder []string) string {
 	}
 	sort.Strings(rest)
 	for _, key := range rest {
-		parts = append(parts, fmt.Sprintf("--%s=%s", key, shellQuoteValue(values[key])))
+		parts = append(parts, utils.ShellQuoteIfNeeded(fmt.Sprintf("--%s=%s", key, values[key])))
 	}
 	return strings.Join(parts, " ")
-}
-
-var safeArgValueRe = regexp.MustCompile(`^[a-zA-Z0-9_.,/:@%+=-]+$`)
-
-func shellQuoteValue(val string) string {
-	if safeArgValueRe.MatchString(val) {
-		return val
-	}
-	return "'" + strings.ReplaceAll(val, "'", `'\''`) + "'"
 }
 
 func convertScriptResultsToSuggestions(results []*entities.Script, separator string) []string {
 	var suggestions []string
 	for _, script := range results {
+		scopeColor := tui.GetScopeColorHex(script.Scope)
 		if script.Name != "" {
-			description := script.Description
-			if description == "" {
-				description = script.Description
-			}
-
-			name := script.Name
-			scopeColor := tui.GetScopeColorHex(script.Scope)
-			suggestions = append(suggestions, script.Scope+separator+name+separator+description+separator+scopeColor)
+			suggestions = append(suggestions, script.Scope+separator+script.Name+separator+script.Description+separator+scopeColor)
 		} else {
-			command := script.FilePath
-			displayCommand := command
-			scopeColor := tui.GetScopeColorHex(script.Scope)
-			suggestions = append(suggestions, script.Scope+separator+displayCommand+separator+script.FilePath+separator+scopeColor)
+			suggestions = append(suggestions, script.Scope+separator+script.FilePath+separator+script.FilePath+separator+scopeColor)
 		}
 	}
 	return suggestions

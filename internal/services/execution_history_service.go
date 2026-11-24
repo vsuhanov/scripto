@@ -16,7 +16,12 @@ import (
 type ScriptStats struct {
 	LastExecutionTime time.Time
 	ExecutionCount    int
+	Frecency          float64
 }
+
+const frecencyHalfLifeHours = 168.0
+
+const executionRecordColumns = `id, execution_timestamp, script_id, executed_script, original_script, placeholder_values, working_directory, script_object_definition, executed_script_hash, original_script_hash, invoked_from, exit_code, finished_at`
 
 type ExecutionRecord struct {
 	ID                     string
@@ -31,6 +36,9 @@ type ExecutionRecord struct {
 	OriginalScriptHash     string
 	ScriptName             string
 	ScriptScope            string
+	InvokedFrom            string
+	ExitCode               *int
+	FinishedAt             int64
 }
 
 type ExecutionHistoryService struct {
@@ -48,6 +56,10 @@ func NewExecutionHistoryService() (*ExecutionHistoryService, error) {
 	return &ExecutionHistoryService{db: db}, nil
 }
 
+func (s *ExecutionHistoryService) DB() *sql.DB {
+	return s.db
+}
+
 func (s *ExecutionHistoryService) Close() {
 	if s.db != nil {
 		s.db.Close()
@@ -60,7 +72,6 @@ func sha256hex(data string) string {
 }
 
 func (s *ExecutionHistoryService) SaveExecution(record ExecutionRecord) {
-	log.Printf("SaveExecution: scriptID=%q executedScript=%q", record.ScriptID, record.ExecutedScript)
 	if record.ID == "" {
 		record.ID = uuid.New().String()
 	}
@@ -75,10 +86,9 @@ func (s *ExecutionHistoryService) SaveExecution(record ExecutionRecord) {
 		pvJSON = []byte("{}")
 	}
 
-	log.Printf("SaveExecution: inserting row id=%q script_id=%q ts=%d", record.ID, record.ScriptID, record.ExecutionTimestamp)
 	_, err = s.db.Exec(
-		`INSERT INTO execution_history (id, execution_timestamp, script_id, executed_script, original_script, placeholder_values, working_directory, script_object_definition, executed_script_hash, original_script_hash)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO execution_history (id, execution_timestamp, script_id, executed_script, original_script, placeholder_values, working_directory, script_object_definition, executed_script_hash, original_script_hash, invoked_from)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		record.ID,
 		record.ExecutionTimestamp,
 		record.ScriptID,
@@ -89,66 +99,39 @@ func (s *ExecutionHistoryService) SaveExecution(record ExecutionRecord) {
 		record.ScriptObjectDefinition,
 		record.ExecutedScriptHash,
 		record.OriginalScriptHash,
+		record.InvokedFrom,
 	)
 	if err != nil {
-		log.Printf("SaveExecution: failed to insert: %v", err)
-	} else {
-		log.Printf("SaveExecution: inserted successfully id=%q", record.ID)
+		log.Printf("SaveExecution: failed to insert id=%q script_id=%q: %v", record.ID, record.ScriptID, err)
 	}
 }
 
-func (s *ExecutionHistoryService) GetLastExecutionTime(scriptID string) (time.Time, error) {
-	var ts int64
-	err := s.db.QueryRow(
-		"SELECT execution_timestamp FROM execution_history WHERE script_id = ? ORDER BY execution_timestamp DESC LIMIT 1",
-		scriptID,
-	).Scan(&ts)
-	if err == sql.ErrNoRows {
-		return time.Time{}, nil
-	}
+func (s *ExecutionHistoryService) RecordResult(id string, exitCode int, finishedAt int64) error {
+	_, err := s.db.Exec("UPDATE execution_history SET exit_code = ?, finished_at = ? WHERE id = ?", exitCode, finishedAt, id)
 	if err != nil {
-		return time.Time{}, err
+		return fmt.Errorf("failed to record execution result: %w", err)
 	}
-	return time.Unix(ts, 0), nil
-}
-
-func (s *ExecutionHistoryService) GetExecutionCount(scriptID string) (int, error) {
-	var count int
-	err := s.db.QueryRow(
-		"SELECT COUNT(*) FROM execution_history WHERE script_id = ?",
-		scriptID,
-	).Scan(&count)
-	if err != nil {
-		return 0, err
-	}
-	return count, nil
+	return nil
 }
 
 func (s *ExecutionHistoryService) GetFrecencyScores() map[string]float64 {
-	rows, err := s.db.Query(`SELECT script_id, execution_timestamp FROM execution_history`)
+	stats, err := s.GetAllScriptStats()
+	scores := make(map[string]float64, len(stats))
 	if err != nil {
-		return map[string]float64{}
+		return scores
 	}
-	defer rows.Close()
-
-	const halfLife = 168.0
-	now := time.Now()
-	scores := map[string]float64{}
-	for rows.Next() {
-		var scriptID string
-		var ts int64
-		if err := rows.Scan(&scriptID, &ts); err != nil {
-			continue
-		}
-		hoursSince := now.Sub(time.Unix(ts, 0)).Hours()
-		scores[scriptID] += 1.0 / (1.0 + hoursSince/halfLife)
+	for id, stat := range stats {
+		scores[id] = stat.Frecency
 	}
 	return scores
 }
 
 func (s *ExecutionHistoryService) GetAllScriptStats() (map[string]ScriptStats, error) {
 	rows, err := s.db.Query(
-		`SELECT script_id, MAX(execution_timestamp), COUNT(*) FROM execution_history GROUP BY script_id`,
+		`SELECT script_id, MAX(execution_timestamp), COUNT(*),
+		        SUM(1.0 / (1.0 + ((? - execution_timestamp) / 3600.0) / ?))
+		 FROM execution_history GROUP BY script_id`,
+		time.Now().Unix(), frecencyHalfLifeHours,
 	)
 	if err != nil {
 		return nil, err
@@ -160,15 +143,17 @@ func (s *ExecutionHistoryService) GetAllScriptStats() (map[string]ScriptStats, e
 		var scriptID string
 		var lastTs int64
 		var count int
-		if err := rows.Scan(&scriptID, &lastTs, &count); err != nil {
+		var frecency float64
+		if err := rows.Scan(&scriptID, &lastTs, &count, &frecency); err != nil {
 			return nil, err
 		}
 		stats[scriptID] = ScriptStats{
 			LastExecutionTime: time.Unix(lastTs, 0),
 			ExecutionCount:    count,
+			Frecency:          frecency,
 		}
 	}
-	return stats, nil
+	return stats, rows.Err()
 }
 
 func (s *ExecutionHistoryService) GetHistory(filter string, limit, offset int) ([]ExecutionRecord, error) {
@@ -176,7 +161,7 @@ func (s *ExecutionHistoryService) GetHistory(filter string, limit, offset int) (
 	var err error
 	if filter != "" {
 		rows, err = s.db.Query(
-			`SELECT id, execution_timestamp, script_id, executed_script, original_script, placeholder_values, working_directory, script_object_definition, executed_script_hash, original_script_hash
+			`SELECT `+executionRecordColumns+`
 			 FROM execution_history
 			 WHERE executed_script LIKE ? OR script_id = ?
 			 ORDER BY execution_timestamp DESC LIMIT ? OFFSET ?`,
@@ -184,7 +169,7 @@ func (s *ExecutionHistoryService) GetHistory(filter string, limit, offset int) (
 		)
 	} else {
 		rows, err = s.db.Query(
-			`SELECT id, execution_timestamp, script_id, executed_script, original_script, placeholder_values, working_directory, script_object_definition, executed_script_hash, original_script_hash
+			`SELECT `+executionRecordColumns+`
 			 FROM execution_history
 			 ORDER BY execution_timestamp DESC LIMIT ? OFFSET ?`,
 			limit, offset,
@@ -199,7 +184,7 @@ func (s *ExecutionHistoryService) GetHistory(filter string, limit, offset int) (
 
 func (s *ExecutionHistoryService) GetScriptIDsRunFromDirectory(dir string) ([]string, error) {
 	rows, err := s.db.Query(
-		`SELECT DISTINCT script_id FROM execution_history WHERE working_directory = ?`,
+		`SELECT DISTINCT script_id FROM execution_history WHERE invoked_from = ?`,
 		dir,
 	)
 	if err != nil {
@@ -214,12 +199,12 @@ func (s *ExecutionHistoryService) GetScriptIDsRunFromDirectory(dir string) ([]st
 		}
 		ids = append(ids, id)
 	}
-	return ids, nil
+	return ids, rows.Err()
 }
 
 func (s *ExecutionHistoryService) GetScriptHistory(scriptID string, limit int) ([]ExecutionRecord, error) {
 	rows, err := s.db.Query(
-		`SELECT id, execution_timestamp, script_id, executed_script, original_script, placeholder_values, working_directory, script_object_definition, executed_script_hash, original_script_hash
+		`SELECT `+executionRecordColumns+`
 		 FROM execution_history
 		 WHERE script_id = ?
 		 ORDER BY execution_timestamp DESC LIMIT ?`,
@@ -237,12 +222,18 @@ func scanExecutionRecords(rows *sql.Rows) ([]ExecutionRecord, error) {
 	for rows.Next() {
 		var r ExecutionRecord
 		var pvJSON string
+		var exitCode sql.NullInt64
 		if err := rows.Scan(
 			&r.ID, &r.ExecutionTimestamp, &r.ScriptID, &r.ExecutedScript,
 			&r.OriginalScript, &pvJSON, &r.WorkingDirectory,
 			&r.ScriptObjectDefinition, &r.ExecutedScriptHash, &r.OriginalScriptHash,
+			&r.InvokedFrom, &exitCode, &r.FinishedAt,
 		); err != nil {
 			return nil, err
+		}
+		if exitCode.Valid {
+			code := int(exitCode.Int64)
+			r.ExitCode = &code
 		}
 		if err := json.Unmarshal([]byte(pvJSON), &r.PlaceholderValues); err != nil {
 			r.PlaceholderValues = map[string]string{}
@@ -257,17 +248,19 @@ func scanExecutionRecords(rows *sql.Rows) ([]ExecutionRecord, error) {
 		}
 		records = append(records, r)
 	}
-	return records, nil
+	return records, rows.Err()
 }
 
-func BuildExecutionRecord(script *entities.Script, executedScript, originalScript string, placeholderValues map[string]string, workingDir string) ExecutionRecord {
+func BuildExecutionRecord(script *entities.Script, executedScript, originalScript string, placeholderValues map[string]string, workingDir, invokedFrom string) ExecutionRecord {
 	scriptJSON, _ := json.Marshal(script)
 	return ExecutionRecord{
-		ScriptID:              script.ID,
-		ExecutedScript:        executedScript,
-		OriginalScript:        originalScript,
-		PlaceholderValues:     placeholderValues,
-		WorkingDirectory:      workingDir,
+		ID:                     uuid.New().String(),
+		InvokedFrom:            invokedFrom,
+		ScriptID:               script.ID,
+		ExecutedScript:         executedScript,
+		OriginalScript:         originalScript,
+		PlaceholderValues:      placeholderValues,
+		WorkingDirectory:       workingDir,
 		ScriptObjectDefinition: string(scriptJSON),
 	}
 }

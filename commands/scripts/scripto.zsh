@@ -1,6 +1,7 @@
 # Load shortcuts function - sources all function files from bin directory
 scripto_load_shortcuts() {
-    local bin_dir="${SCRIPTO_CONFIG:-$HOME/.scripto}/bin"
+    local bin_dir="$HOME/.scripto/bin"
+    [ -n "$SCRIPTO_CONFIG" ] && bin_dir="${SCRIPTO_CONFIG:h}/bin"
     if [ -d "$bin_dir" ]; then
         setopt local_options null_glob
         for func_file in "$bin_dir"/*.zsh; do
@@ -16,6 +17,9 @@ autoload -Uz add-zsh-hook
 zmodload -F zsh/datetime p:EPOCHSECONDS p:EPOCHREALTIME 2>/dev/null
 
 typeset -g _scripto_hist_id=""
+typeset -g _scripto_hist_cmd=""
+typeset -g _scripto_hist_cwd=""
+typeset -g _scripto_hist_started=""
 
 _scripto_should_record() {
     local cmd="$1"
@@ -49,16 +53,19 @@ _scripto_preexec() {
     [[ -n "$SCRIPTO_TRACK_HISTORY" ]] || return
     _scripto_should_record "$1" || return
     _scripto_hist_id="$$-${EPOCHREALTIME}-${RANDOM}"
-    command scripto __record-history --id "$_scripto_hist_id" --cwd "$PWD" \
-        --session "$$" --started "$EPOCHSECONDS" -- "$1" >/dev/null 2>&1 &!
+    _scripto_hist_cmd="$1"
+    _scripto_hist_cwd="$PWD"
+    _scripto_hist_started="$EPOCHSECONDS"
 }
 
 _scripto_precmd() {
     local code=$?
     [[ -n "$_scripto_hist_id" ]] || return
-    command scripto __record-history --id "$_scripto_hist_id" --exit "$code" \
-        --finished "$EPOCHSECONDS" >/dev/null 2>&1 &!
+    command scripto __record-history --id "$_scripto_hist_id" --cwd "$_scripto_hist_cwd" \
+        --session "$$" --started "$_scripto_hist_started" --finished "$EPOCHSECONDS" \
+        --exit "$code" -- "$_scripto_hist_cmd" >/dev/null 2>&1 &!
     _scripto_hist_id=""
+    _scripto_hist_cmd=""
 }
 
 add-zsh-hook preexec _scripto_preexec
@@ -69,6 +76,7 @@ precmd_functions=(_scripto_precmd ${precmd_functions:#_scripto_precmd})
 scripto() {
     # Create a temporary file for command communication
     local cmd_file=$(mktemp)
+    local exec_id_file=$(mktemp)
     
     # Check if this is a "scripto add" command with no additional arguments
     # and generate shell history file if needed
@@ -85,8 +93,11 @@ scripto() {
     fi
     
     # Run scripto with custom descriptor, allow normal interaction
-    SCRIPTO_CMD_FD="$cmd_file" command scripto "$@"
+    SCRIPTO_CMD_FD="$cmd_file" SCRIPTO_EXEC_ID_FILE="$exec_id_file" command scripto "$@"
     local exit_code=$?
+    local exec_id=""
+    [ -s "$exec_id_file" ] && exec_id=$(<"$exec_id_file")
+    rm -f "$exec_id_file"
     
     # Clean up history file if it was created
     if [ -n "$history_file" ]; then
@@ -102,9 +113,16 @@ scripto() {
         source "$cmd_file"
         local source_exit=$?
         rm -f "$cmd_file"
+        if [ -n "$exec_id" ]; then
+            command scripto __record-execution --id "$exec_id" --exit "$source_exit" \
+                --finished "$EPOCHSECONDS" >/dev/null 2>&1 &!
+        fi
         # Load shortcuts after script execution
         scripto_load_shortcuts
         return $source_exit
+    elif [ $exit_code -eq 0 ]; then
+        rm -f "$cmd_file"
+        return 0
     elif [ $exit_code -eq 3 ]; then
         # Built-in command completed - cleanup and return success
         rm -f "$cmd_file"
